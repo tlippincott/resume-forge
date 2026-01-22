@@ -5,7 +5,7 @@ from app.config import API_KEY, MODEL_NAME
 
 client = OpenAI(api_key=API_KEY)
 
-def call_openai_json(messages, temperature=0.3, retries=2):
+def call_openai_json(messages, temperature=0.0, retries=2):
     for attempt in range(retries + 1):
         try:
             response = client.chat.completions.create(

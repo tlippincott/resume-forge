@@ -1,5 +1,16 @@
 import gradio as gr
 from app.resume_engine import generate_resume
+from pathlib import Path
+
+BULLET_DIR = "bullet_libs"
+excluded_list = ["bullet_example.json"]
+
+def list_bullet_files():
+    return sorted([
+        (f.name, str(f))
+        for f in Path(BULLET_DIR).iterdir()
+        if f.is_file() and f.name not in excluded_list
+    ])
 
 def launch_app():
     with gr.Blocks() as demo:
@@ -8,21 +19,21 @@ def launch_app():
         jd = gr.Textbox(label="Job Description", lines=10)
         company = gr.Textbox(label="Company Name")
         info = gr.Textbox(label="Company Info", lines=5)
+        bullet_file = gr.Dropdown(
+            choices=list_bullet_files(),
+            label="Select bullet list",
+            value=None
+        )
         job_change = gr.Checkbox(label="Customer-facing role")
 
         output = gr.JSON()
 
         run = gr.Button("Generate Resume")
         run.click(
-            fn=lambda jd, c, i, j: generate_resume(
-                jd, c, i, j,
-                {
-                    "spins": "bullet_libs/spins.json",
-                    "programmer": "bullet_libs/programmer.json",
-                    "analyst": "bullet_libs/analyst.json"
-                }
+            fn=lambda jd, c, i, bf, j,: generate_resume(
+                jd, c, i, bf, j,
             ),
-            inputs=[jd, company, info, job_change],
+            inputs=[jd, company, info, bullet_file, job_change],
             outputs=output
         )
 

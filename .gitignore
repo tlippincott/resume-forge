@@ -1,4 +1,22 @@
+# Secrets
 .env
-venv/
+
+# Python cache files
 __pycache__/
+*.pyc
+*.pyo
+
+# Virtual Environments
+venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Bullet lists
+bullet_libs/
+
+# Except the example bullet list
+!bullet_libs/bullet_example.json
+
+# Generated PDF files
 output/
