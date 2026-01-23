@@ -1,0 +1,186 @@
+"""
+Shared fixtures and test environment setup for Resume-Forge tests.
+"""
+import json
+import os
+import pytest
+from unittest.mock import MagicMock
+
+
+# ============================================================================
+# Environment Setup
+# ============================================================================
+
+@pytest.fixture(scope="session", autouse=True)
+def set_test_env():
+    """Set required environment variables for testing."""
+    os.environ.setdefault("API_KEY", "test-api-key-not-real")
+    os.environ.setdefault("MODEL_NAME", "gpt-4")
+    yield
+
+
+# ============================================================================
+# Sample Data Fixtures
+# ============================================================================
+
+@pytest.fixture
+def sample_job_description():
+    """Sample job description for testing."""
+    return """
+    Software Engineer - Python Development
+
+    Requirements:
+    - 3+ years Python experience
+    - Experience with REST APIs
+    - Database knowledge (PostgreSQL, MySQL)
+    - Strong problem-solving skills
+    """
+
+
+@pytest.fixture
+def sample_bullets():
+    """Sample resume bullets for testing."""
+    return [
+        "Developed Python REST APIs serving 10K requests/day",
+        "Managed PostgreSQL databases with 5TB of data",
+        "Troubleshot production issues reducing downtime by 40%",
+        "Collaborated with cross-functional teams on feature delivery",
+        "Automated deployment pipelines using Jenkins and Docker",
+    ]
+
+
+@pytest.fixture
+def sample_company_info():
+    """Sample company information."""
+    return {
+        "name": "TechCorp Inc",
+        "info": "A leading technology company focused on cloud solutions."
+    }
+
+
+# ============================================================================
+# Assignment Fixtures
+# ============================================================================
+
+@pytest.fixture
+def make_assignments():
+    """Factory fixture to create assignment lists."""
+    def _make(spins=0, programmer=0, analyst=0, bullets=None):
+        """
+        Create a list of assignment dicts.
+
+        Args:
+            spins: Number of spins bullets
+            programmer: Number of programmer bullets
+            analyst: Number of analyst bullets
+            bullets: Optional list of bullet texts (auto-generated if None)
+
+        Returns:
+            List of assignment dicts
+        """
+        assignments = []
+        bullet_counter = 0
+
+        for section, count in [("spins", spins), ("programmer", programmer), ("analyst", analyst)]:
+            for i in range(count):
+                if bullets and bullet_counter < len(bullets):
+                    bullet_text = bullets[bullet_counter]
+                else:
+                    bullet_text = f"Bullet {bullet_counter + 1} for {section}"
+                assignments.append({
+                    "bullet": bullet_text,
+                    "section": section
+                })
+                bullet_counter += 1
+
+        return assignments
+
+    return _make
+
+
+@pytest.fixture
+def valid_assignments(make_assignments):
+    """Pre-made valid assignments with balanced distribution."""
+    return make_assignments(spins=10, programmer=10, analyst=5)
+
+
+# ============================================================================
+# Mock OpenAI Client Fixtures
+# ============================================================================
+
+@pytest.fixture
+def mock_openai_response():
+    """Factory to create mock OpenAI response objects."""
+    def _make(content):
+        """Create a mock response with the given JSON content."""
+        mock_message = MagicMock()
+        mock_message.content = json.dumps(content) if isinstance(content, dict) else content
+
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+
+        return mock_response
+
+    return _make
+
+
+@pytest.fixture
+def mock_openai_client(mocker, mock_openai_response):
+    """Mock the OpenAI client for testing."""
+    mock_client = mocker.patch("app.openai_client.client")
+
+    # Default response - can be overridden in tests
+    default_response = mock_openai_response({"result": "default"})
+    mock_client.chat.completions.create.return_value = default_response
+
+    return mock_client
+
+
+# ============================================================================
+# Resume Data Fixtures
+# ============================================================================
+
+@pytest.fixture
+def sample_resume_data():
+    """Sample resume data structure returned by generate_resume."""
+    return {
+        "summary": "Experienced software engineer with expertise in Python and cloud technologies.",
+        "spins": [
+            "Resolved customer issues with quick turnaround",
+            "Collaborated with product teams on feature requests",
+        ],
+        "programmer": [
+            "Built REST APIs using Python Flask",
+            "Automated CI/CD pipelines with Jenkins",
+        ],
+        "analyst": [
+            "Performed root cause analysis on production incidents",
+            "Created documentation for support processes",
+        ]
+    }
+
+
+# ============================================================================
+# Deterministic Random Fixture
+# ============================================================================
+
+@pytest.fixture
+def fixed_random(mocker):
+    """Fix random.randint to return deterministic value."""
+    mocker.patch("app.resume_engine.random.randint", return_value=30)
+    return 30
+
+
+# ============================================================================
+# Temporary File Fixtures
+# ============================================================================
+
+@pytest.fixture
+def temp_bullet_file(tmp_path, sample_bullets):
+    """Create a temporary bullet file for testing."""
+    bullet_file = tmp_path / "bullets.json"
+    bullet_file.write_text(json.dumps({"bullets": sample_bullets}))
+    return str(bullet_file)

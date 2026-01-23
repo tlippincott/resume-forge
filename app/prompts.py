@@ -29,11 +29,11 @@ BULLETS:
 {bullets}
 
 RETURN JSON:
-{
+{{
     "scored_bullets": [
-    { "bullet": "...", "score": 0-5 }
+    {{ "bullet": "...", "score": 0-5 }}
     ]
-}
+}}
 """
     }]
 
