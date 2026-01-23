@@ -2,9 +2,9 @@ from app.openai_client import call_openai_json
 
 def cover_letter_prompt(summary, bullets, job_title, job_description, company_name,
                         company_info, job_change):
-    return [{
-        "role": "user",
-        "content": f"""
+   return [{
+      "role": "user",
+      "content": f"""
 === ROLE ===
 You are a professional cover letter writer specializing in authentic, grounded narratives.
 Your goal is to connect documented experience to employer needs WITHOUT inventing claims.
@@ -115,11 +115,11 @@ JOB CHANGE CONTEXT:
 Return ONLY valid JSON with this exact structure:
 
 {{
-    "cover_letter_body": [
-        "First paragraph: opening (60-80 words)",
-        "Second paragraph: body (100-130 words)",
-        "Third paragraph: closing (40-60 words)"
-    ]
+   "cover_letter_body": [
+      "First paragraph: opening (60-80 words)",
+      "Second paragraph: body (100-130 words)",
+      "Third paragraph: closing (40-60 words)"
+   ]
 }}
 
 REQUIREMENTS:
@@ -139,20 +139,20 @@ Before returning your response, verify:
 6. Tone is professional and authentic, not desperate or hyperbolic
 7. JSON is valid with exactly 3 array elements
 """
-    }]
+   }]
 
 def generate_cover_letter(resume_data, job_title, job_description, company_name,
-                            company_info, job_change):
-    
-    bullets = resume_data["spins"] + resume_data["programmer"] + resume_data["analyst"]
+                           company_info, job_change):
+   
+   bullets = resume_data["spins"] + resume_data["programmer"] + resume_data["analyst"]
 
-    result = call_openai_json(
-        cover_letter_prompt(
+   result = call_openai_json(
+      cover_letter_prompt(
             resume_data["summary"], bullets,
             job_title, job_description,
             company_name, company_info, job_change
-        ),
-        temperature=0.7
-    )
+      ),
+      temperature=0.7
+   )
 
-    return "<p>" + "</p><p>".join(result["cover_letter_body"]) + "</p>"
+   return "<p>" + "</p><p>".join(result["cover_letter_body"]) + "</p>"

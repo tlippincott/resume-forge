@@ -16,8 +16,10 @@ def call_openai_json(messages, temperature=0.0, retries=2):
                 ],
                 temperature=temperature
             )
+            if not response.choices:
+                raise RuntimeError("OpenAI returned empty response")
             return json.loads(response.choices[0].message.content)
-        except Exception as e:
+        except (json.JSONDecodeError, KeyError, AttributeError) as e:
             if attempt == retries:
                 raise RuntimeError(f"JSON parse failure: {e}")
             time.sleep(1)

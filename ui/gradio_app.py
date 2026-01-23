@@ -6,6 +6,9 @@ BULLET_DIR = "bullet_libs"
 excluded_list = ["bullet_example.json"]
 
 def list_bullet_files():
+    bullet_path = Path(BULLET_DIR)
+    if not bullet_path.exists():
+        return []
     return sorted([
         (f.name, str(f))
         for f in Path(BULLET_DIR).iterdir()
@@ -32,7 +35,7 @@ def launch_app():
         run.click(
             fn=lambda jd, c, i, bf, j,: generate_resume(
                 jd, c, i, bf, j,
-            ),
+            ) if bf else {"error": "Please select a bullet file"},
             inputs=[jd, company, info, bullet_file, job_change],
             outputs=output
         )
