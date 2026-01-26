@@ -46,12 +46,12 @@ def generate_resume(job_description, company_name,
     # 6. Rebalance sections (enforce 10-12 per primary section)
     sections = rebalance(assignments)
 
-    # 7. Convert to HTML
+    # 7. Return plain lists
     result = {
         "summary": rewritten["summary"],
-        "spins": "\n".join(f"<li>{b}</li>" for b in sections["spins"]),
-        "programmer": "\n".join(f"<li>{b}</li>" for b in sections["programmer"]),
-        "analyst": "\n".join(f"<li>{b}</li>" for b in sections["analyst"]),
+        "spins": sections["spins"],
+        "programmer": sections["programmer"],
+        "analyst": sections["analyst"],
     }
 
     return result

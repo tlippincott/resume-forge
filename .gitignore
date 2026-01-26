@@ -20,3 +20,7 @@ bullet_libs/
 
 # Generated PDF files
 output/
+
+# Pytest
+.coverage
+.pytest_cache/

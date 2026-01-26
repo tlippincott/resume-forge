@@ -163,11 +163,11 @@ class TestGenerateResume:
         assert isinstance(result["summary"], str)
         assert len(result["summary"]) > 0
 
-    def test_sections_contain_html_list_items(
+    def test_sections_contain_lists(
         self, mocker, extended_bullet_file, sample_job_description,
         mock_extended_responses, fixed_random
     ):
-        """Should format sections as HTML list items."""
+        """Should return sections as plain lists."""
         with open(extended_bullet_file) as f:
             bullets = json.load(f)["bullets"]
 
@@ -187,11 +187,12 @@ class TestGenerateResume:
             False
         )
 
-        # Each section should have <li> tags
-        assert "<li>" in result["spins"]
-        assert "</li>" in result["spins"]
-        assert "<li>" in result["programmer"]
-        assert "</li>" in result["programmer"]
+        # Each section should be a list
+        assert isinstance(result["spins"], list)
+        assert isinstance(result["programmer"], list)
+        assert isinstance(result["analyst"], list)
+        assert len(result["spins"]) > 0
+        assert len(result["programmer"]) > 0
 
     def test_calls_openai_for_scoring(
         self, mocker, extended_bullet_file, sample_job_description,
@@ -291,8 +292,8 @@ class TestGenerateResume:
             False
         )
 
-        # Result should contain rewritten bullets
-        assert "Rewritten:" in result["spins"]
+        # Result should contain rewritten bullets (now as list)
+        assert any("Rewritten:" in bullet for bullet in result["spins"])
 
     def test_passes_job_change_to_rewrite(
         self, mocker, extended_bullet_file, sample_job_description,
