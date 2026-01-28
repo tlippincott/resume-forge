@@ -33,8 +33,7 @@ def text_to_bullets(text: str) -> list[str]:
     return [line.strip() for line in text.split('\n') if line.strip()]
 
 
-def load_resume_html(summary: str, spins_html: str,
-                     programmer_html: str, analyst_html: str) -> str:
+def load_resume_html(summary: str, spins_html: str, programmer_html: str, analyst_html: str) -> str:
     """Load template, substitute placeholders, return complete HTML."""
     template_path = Path(__file__).parent.parent / "templates" / "resume.html"
     css_path = Path(__file__).parent.parent / "templates" / "resume_style.css"

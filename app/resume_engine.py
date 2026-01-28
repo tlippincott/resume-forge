@@ -13,7 +13,9 @@ def generate_resume(job_description, company_name,
     if not os.path.exists(bullet_file):
         raise ValueError(f"Bullet file not found: {bullet_file}")
     with open(bullet_file, "r", encoding="utf-8") as f:
-        all_bullets = json.load(f)["bullets"]
+        bullet_data = json.load(f)
+        all_bullets = bullet_data["bullets"]
+        role = bullet_data.get("role", "General")  # Default to "General" if role not present
 
     # 1. Score all bullets
     scored = call_openai_json(
@@ -34,7 +36,8 @@ def generate_resume(job_description, company_name,
             company_name,
             company_info,
             selected,
-            job_change
+            job_change,
+            role  # Pass role for strategy selection
         ),
         temperature=0.7
     )

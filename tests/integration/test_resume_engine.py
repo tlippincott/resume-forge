@@ -56,7 +56,10 @@ class TestGenerateResume:
         # Need enough bullets to meet minimums (10 spins + 10 programmer)
         bullets = [f"Bullet {i} for resume testing" for i in range(35)]
         bullet_file = tmp_path / "bullets.json"
-        bullet_file.write_text(json.dumps({"bullets": bullets}))
+        bullet_file.write_text(json.dumps({
+            "role": "Help Desk",
+            "bullets": bullets
+        }))
         return str(bullet_file)
 
     @pytest.fixture
@@ -324,3 +327,73 @@ class TestGenerateResume:
         messages = second_call[0][0]
         # The prompt should contain the job_change value
         assert "True" in str(messages)
+
+    def test_extracts_role_from_bullet_file(
+        self, mocker, tmp_path, sample_job_description,
+        mock_extended_responses, fixed_random
+    ):
+        """Should extract role from bullet file and pass to rewrite_prompt."""
+        # Create bullet file with specific role
+        bullets = [f"Bullet {i}" for i in range(35)]
+        bullet_file = tmp_path / "bullets_with_role.json"
+        bullet_file.write_text(json.dumps({
+            "role": "Programmer",
+            "bullets": bullets
+        }))
+
+        scored, rewritten, classification = mock_extended_responses(bullets)
+        mock_call = mocker.patch("app.resume_engine.call_openai_json")
+        mock_call.side_effect = [scored, rewritten]
+        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
+        mock_classify.return_value = classification["assignments"]
+
+        # Mock rewrite_prompt to inspect parameters
+        mock_rewrite = mocker.patch("app.resume_engine.rewrite_prompt")
+        mock_rewrite.return_value = [{"role": "user", "content": "test"}]
+
+        generate_resume(
+            sample_job_description,
+            "TechCorp",
+            "A tech company",
+            str(bullet_file),
+            False
+        )
+
+        # Verify rewrite_prompt was called with role="Programmer"
+        assert mock_rewrite.called
+        call_args = mock_rewrite.call_args
+        # Last positional argument should be the role
+        assert call_args[0][5] == "Programmer"
+
+    def test_defaults_to_general_when_role_missing(
+        self, mocker, tmp_path, sample_job_description,
+        mock_extended_responses, fixed_random
+    ):
+        """Should default to 'General' role when role field is missing."""
+        bullets = [f"Bullet {i}" for i in range(35)]
+        bullet_file = tmp_path / "bullets_no_role.json"
+        bullet_file.write_text(json.dumps({
+            "bullets": bullets  # No "role" field
+        }))
+
+        scored, rewritten, classification = mock_extended_responses(bullets)
+        mock_call = mocker.patch("app.resume_engine.call_openai_json")
+        mock_call.side_effect = [scored, rewritten]
+        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
+        mock_classify.return_value = classification["assignments"]
+
+        # Mock rewrite_prompt to inspect parameters
+        mock_rewrite = mocker.patch("app.resume_engine.rewrite_prompt")
+        mock_rewrite.return_value = [{"role": "user", "content": "test"}]
+
+        generate_resume(
+            sample_job_description,
+            "TechCorp",
+            "A tech company",
+            str(bullet_file),
+            False
+        )
+
+        # Verify rewrite_prompt was called with role="General"
+        call_args = mock_rewrite.call_args
+        assert call_args[0][5] == "General"

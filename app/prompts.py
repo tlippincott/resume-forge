@@ -37,17 +37,33 @@ RETURN JSON:
 """
     }]
 
-def rewrite_prompt(job_description, company_name, company_info, selected_bullets, job_change):
+def _build_base_rewrite_prompt(job_description, company_name, company_info,
+                                selected_bullets, job_change, role_specific_rules=""):
+    """
+    Base prompt builder with injection point for role-specific summary rules.
+
+    Args:
+        job_description: Target job description
+        company_name: Target company name
+        company_info: Additional company context
+        selected_bullets: List of selected bullet strings
+        job_change: Context about job change (customer-facing, etc.)
+        role_specific_rules: Role-specific summary generation rules to inject
+
+    Returns:
+        List with single dict containing role and content keys for OpenAI API
+    """
     return [{
         "role": "user",
         "content": f"""
 === ROLE ===
-You are a resume optimization specialist focused on clarity, relevance, and FACTUAL ACCURACY.
-Your only goal is to rewrite bullets for better alignment WITHOUT changing their meaning.
+You are an expert technical recruiter and resume optimization specialist focused on clarity, relevance, and FACTUAL ACCURACY.
+Your only goal is to rewrite bullets for better alignment with the job description WITHOUT changing their meaning.
 
 === TASK ===
 Rewrite the provided resume bullets to better align with the job description.
-Then generate a 2-3 sentence professional summary based ONLY on the rewritten bullets.
+Then generate a 3-4 sentence professional summary based ONLY on the rewritten bullets.
+Prioritize the skills and experiences most likely to be scanned by a technical recruiter or ATS(Applicant Tracking System) for the role.
 
 CRITICAL: You are refining language, NOT inventing experience.
 
@@ -75,7 +91,8 @@ CRITICAL: You are refining language, NOT inventing experience.
     - Do NOT add outcomes or results not in the original
 
 5. LANGUAGE CONSTRAINTS
-    - Use active, professional, neutral tone
+    - If a sentence requires a subject, rewrite it to foreground the skill, achievement, or role instead
+    - Use active, professional, confident, neutral tone
     - Avoid superlatives (best, optimal, cutting-edge, innovative) unless in original
     - Avoid marketing language (transformative, game-changing, revolutionary)
     - Prefer concrete verbs over abstract ones
@@ -88,18 +105,19 @@ CRITICAL: You are refining language, NOT inventing experience.
 
 === SUMMARY GENERATION RULES ===
 
-The summary must be:
-- 2-3 complete sentences (40-60 words total)
+- 3-4 complete sentences (60-90 words total)
+- Write in a résumé style using an implied subject
+- No first-person pronouns (I, me, my)
+- No third-person phrases such as “the candidate” or “this person”
+- Prioritize the skills and experience most likely to be scanned by a technical recruiter or ATS(Applicant Tracking System) for this role.
+- Optimized for clarity and recruiter skimmability
+- Emphasize impact, outcomes, or problem-solving patterns
+- Match the seniority and tone of job description
 - Grounded in themes from the REWRITTEN BULLETS ONLY
 - Free of unverifiable claims about passion, enthusiasm, or cultural fit
 - Focused on role experience and key technical/domain areas present in bullets
-- Written in third person or first person (match resume style)
 
-Do NOT include in summary:
-- Technologies not present in bullets
-- Claims about years of experience (unless counting from bullets)
-- Statements about career goals or aspirations
-- Personality traits or soft skills not evidenced in bullets
+{role_specific_rules}
 
 === INPUT ===
 
@@ -128,13 +146,13 @@ Return ONLY valid JSON with this exact structure:
         "Second rewritten bullet preserving original meaning",
         "..."
     ],
-    "summary": "2-3 sentence professional summary grounded in the bullets above"
+    "summary": "3-4 sentence professional summary grounded in the bullets above"
 }}
 
 REQUIREMENTS:
 - rewritten_bullets: array with same count as input bullets
 - Each bullet must be factually equivalent to its original
-- summary: single string, 2-3 sentences, 40-60 words
+- summary: single string, 3-4 sentences, 60-90 words
 - No additional keys or fields
 
 === VERIFICATION CHECKLIST ===
@@ -144,10 +162,102 @@ Before returning your response, verify:
 2. No new technologies or tools were added
 3. No metrics or numbers were invented
 4. Scope and seniority remain unchanged
-5. Summary only references content in rewritten bullets
 6. JSON is valid and complete
 """
     }]
+
+def rewrite_prompt_helpdesk(job_description, company_name, company_info,
+                            selected_bullets, job_change):
+    """Generate prompt with Help Desk role-specific summary rules"""
+    role_rules = """
+ROLE-SPECIFIC EMPHASIS (Help Desk / Technical Support):
+- Emphasize 10+ years of customer service excellence and technical troubleshooting capabilities
+- Highlight 90%% first-call resolution rate
+- Stress communication skills with non-technical users and escalation handling
+- Focus on breadth of technical knowledge across multiple platforms and systems
+- Showcase application programming skills directly transferable to help desk roles
+"""
+    return _build_base_rewrite_prompt(
+        job_description, company_name, company_info,
+        selected_bullets, job_change, role_rules
+    )
+
+def rewrite_prompt_programmer(job_description, company_name, company_info,
+                            selected_bullets, job_change):
+    """Generate prompt with Programmer/Developer role-specific summary rules"""
+    role_rules = """
+ROLE-SPECIFIC EMPHASIS (Programmer / Software Developer):
+- Emphasize 10+ years of software development lifecycle proficiency and coding expertise
+- Highlight experience acquiring and applying new technologies independently, adapting quickly to changing requirements and contributing practical solutions in real-world settings 
+- Focus on architecture, design patterns, code quality, and technical problem-solving
+- Stress communication skills that bridge the gap between technical and non-technical individuals
+- Showcase ability to build, deploy, and maintain software systems
+"""
+    return _build_base_rewrite_prompt(
+        job_description, company_name, company_info,
+        selected_bullets, job_change, role_rules
+    )
+
+def rewrite_prompt_analyst(job_description, company_name, company_info,
+                        selected_bullets, job_change):
+    """Generate prompt with Analyst role-specific summary rules"""
+    role_rules = """
+ROLE-SPECIFIC EMPHASIS (Analyst / Business Intelligence):
+- Emphasize data analysis, business intelligence, and insights generation capabilities
+- Highlight SQL proficiency, data visualization tools, and analytical frameworks
+- Focus on business impact, reporting accuracy, and stakeholder communication
+- Stress problem-solving through data, requirements gathering, and process improvement
+- Include experience with dashboards, KPIs, data modeling, and reporting automation
+- Showcase ability to translate data into actionable business recommendations
+"""
+    return _build_base_rewrite_prompt(
+        job_description, company_name, company_info,
+        selected_bullets, job_change, role_rules
+    )
+
+def rewrite_prompt_default(job_description, company_name, company_info,
+                        selected_bullets, job_change):
+    """Generate prompt with default/generic summary rules (no role-specific emphasis)"""
+    return _build_base_rewrite_prompt(
+        job_description, company_name, company_info,
+        selected_bullets, job_change, ""
+    )
+
+def rewrite_prompt(job_description, company_name, company_info,
+                selected_bullets, job_change, role="General"):
+    """
+    Main entry point for generating rewrite prompts.
+    Dispatches to appropriate role-specific strategy function.
+
+    Args:
+        job_description: Target job description
+        company_name: Target company name
+        company_info: Additional company context
+        selected_bullets: List of selected bullet strings
+        job_change: Context about job change (customer-facing, etc.)
+        role: Role type from bullet file (e.g., "Help Desk", "Programmer", "Analyst")
+
+    Returns:
+        Role-specific prompt with appropriate summary generation rules
+    """
+    # Strategy mapping: role name -> strategy function
+    ROLE_STRATEGIES = {
+        "Help Desk": rewrite_prompt_helpdesk,
+        "Programmer": rewrite_prompt_programmer,
+        "Analyst": rewrite_prompt_analyst,
+        # Add more roles here as bullet files are created:
+        # "DevOps Engineer": rewrite_prompt_devops,
+        # "QA Engineer": rewrite_prompt_qa,
+    }
+
+    # Select strategy or use default
+    strategy_fn = ROLE_STRATEGIES.get(role, rewrite_prompt_default)
+
+    # Execute selected strategy
+    return strategy_fn(
+        job_description, company_name, company_info,
+        selected_bullets, job_change
+    )
 
 def distribution_prompt(bullets):
     return [{
