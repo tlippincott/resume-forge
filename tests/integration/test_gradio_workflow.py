@@ -27,14 +27,15 @@ class TestGradioWorkflow:
 
         result = handle_generate(
             sample_inputs["jd"],
+            "Test Job Title",
             sample_inputs["company"],
             sample_inputs["info"],
             sample_inputs["bullet_file"],
             sample_inputs["job_change"]
         )
 
-        # Should return 9 outputs
-        assert len(result) == 9
+        # Should return 11 outputs (added job_title param and state_selected_bullet_file output)
+        assert len(result) == 11
 
         # First output should be dict (JSON)
         assert isinstance(result[0], dict)
@@ -49,24 +50,27 @@ class TestGradioWorkflow:
         for i in range(1, 5):
             assert isinstance(result[i], str)
 
-        # State outputs (5-8) - summary is string, others are lists
+        # State outputs (5-9) - summary is string, others are lists
         assert isinstance(result[5], str)  # state_summary
         assert isinstance(result[6], list)  # state_spins
         assert isinstance(result[7], list)  # state_programmer
         assert isinstance(result[8], list)  # state_analyst
+        assert isinstance(result[9], str)  # state_job_title
+        assert isinstance(result[10], str)  # state_selected_bullet_file
 
     def test_generate_handler_with_missing_bullet_file(self):
         """Test that handle_generate handles missing bullet file."""
         result = handle_generate(
             "Test JD",
+            "Test Job Title",
             "Test Company",
             "Test Info",
             None,  # No bullet file
             False
         )
 
-        # Should return 9 outputs with error
-        assert len(result) == 9
+        # Should return 11 outputs with error
+        assert len(result) == 11
         assert "error" in result[0]
 
     def test_preview_update_handler(self):
@@ -148,6 +152,7 @@ class TestGradioWorkflow:
         # Step 1: Generate resume
         gen_result = handle_generate(
             sample_inputs["jd"],
+            "Test Job Title",
             sample_inputs["company"],
             sample_inputs["info"],
             sample_inputs["bullet_file"],

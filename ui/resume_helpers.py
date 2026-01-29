@@ -83,3 +83,120 @@ def generate_pdf_file(html_content: str) -> str:
 
     # Return absolute path
     return str(filepath.absolute())
+
+
+def load_cover_letter_html(cover_letter_body: str) -> str:
+    """Load cover letter template, substitute placeholder, return complete HTML."""
+    template_path = Path(__file__).parent.parent / "templates" / "cover_letter.html"
+    css_path = Path(__file__).parent.parent / "templates" / "cover_style.css"
+
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template not found: {template_path}")
+
+    # Read template
+    with open(template_path, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+
+    # Read CSS and inline it
+    if css_path.exists():
+        with open(css_path, 'r', encoding='utf-8') as f:
+            css_content = f.read()
+
+        # Replace CSS link with inline style
+        html_content = html_content.replace(
+            '<link rel="stylesheet" href="cover_style.css">',
+            f'<style>{css_content}</style>'
+        )
+
+    # Replace placeholder
+    html_content = html_content.replace("{cover_letter_body}", cover_letter_body or "")
+
+    return html_content
+
+
+def generate_cover_letter_pdf_file(html_content: str) -> str:
+    """Generate cover letter PDF from HTML, return absolute file path."""
+    # Create timestamp filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"cover_letter_{timestamp}.pdf"
+
+    # Ensure output directory exists
+    output_dir = Path(__file__).parent.parent / "output"
+    output_dir.mkdir(exist_ok=True)
+
+    # Create full path
+    filepath = output_dir / filename
+
+    # Generate PDF
+    render_html_to_pdf(html_content, str(filepath))
+
+    # Return absolute path
+    return str(filepath.absolute())
+
+
+def list_gap_files() -> list[tuple[str, str]]:
+    """
+    List available gap explanation files from gap_libs/ directory.
+
+    Returns:
+        List of tuples: [(display_name, file_path), ...]
+        Example: [("Help Desk", "gap_libs/help_desk_gap.json"), ...]
+    """
+    gap_path = Path(__file__).parent.parent / "gap_libs"
+    if not gap_path.exists():
+        return []
+
+    files = []
+    for f in gap_path.iterdir():
+        if f.is_file() and f.suffix == '.json' and f.name.endswith('_gap.json'):
+            # Convert "help_desk_gap" → "Help Desk"
+            display_name = f.stem.replace('_gap', '').replace('_', ' ').title()
+            files.append((display_name, str(f)))
+
+    return sorted(files, key=lambda x: x[0])
+
+
+def load_gap_explanation(gap_file_path: str) -> str:
+    """
+    Load gap explanation paragraph from JSON file.
+
+    Args:
+        gap_file_path: Absolute path to gap JSON file
+
+    Returns:
+        Gap explanation paragraph text, or empty string if file doesn't exist/is invalid
+    """
+    import json
+
+    if not gap_file_path or not Path(gap_file_path).exists():
+        return ""
+
+    try:
+        with open(gap_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get("gap_explanation", "")
+    except (json.JSONDecodeError, KeyError, FileNotFoundError):
+        return ""
+
+
+def derive_gap_file_from_bullet_file(bullet_file_path: str) -> str:
+    """
+    Derive gap file path from bullet file path.
+
+    Args:
+        bullet_file_path: Path to bullet JSON file (e.g., "bullet_libs/help_desk.json")
+
+    Returns:
+        Path to matching gap file (e.g., "gap_libs/help_desk_gap.json")
+        Returns empty string if derivation fails
+    """
+    if not bullet_file_path:
+        return ""
+
+    bullet_path = Path(bullet_file_path)
+    base_name = bullet_path.stem  # e.g., "help_desk"
+
+    # Construct gap file path
+    gap_file = Path(__file__).parent.parent / "gap_libs" / f"{base_name}_gap.json"
+
+    return str(gap_file) if gap_file.exists() else ""

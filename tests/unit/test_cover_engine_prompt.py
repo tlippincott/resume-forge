@@ -102,7 +102,9 @@ class TestCoverLetterPrompt:
         content = result[0]["content"]
 
         assert "cover_letter_body" in content
-        assert "3 paragraphs" in content or "Exactly 3" in content
+        # Now supports 4, 5, or 6 paragraphs based on optional sections
+        assert ("4 paragraphs" in content or "5 paragraphs" in content or
+                "6 paragraphs" in content or "Exactly 4" in content)
 
     def test_includes_paragraph_structure_requirements(self, prompt_args):
         """Should include requirements for paragraph structure."""

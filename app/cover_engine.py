@@ -1,7 +1,30 @@
 from app.openai_client import call_openai_json
 
 def cover_letter_prompt(summary, bullets, job_title, job_description, company_name,
-                        company_info, job_change):
+                        company_info, job_change, company_interest=None,
+                        gap_explanation=None):
+   # Format company_interest for better readability
+   company_interest_text = "Not provided"
+   if company_interest:
+      company_interest_text = "\n".join([
+         f"  - Hook: {company_interest.get('hook', '')}",
+         f"  - Alignment: {company_interest.get('alignment', '')}",
+         f"  - Credibility Anchor: {company_interest.get('credibility_anchor', '')}"
+      ])
+
+   # Determine which case to use
+   has_company_interest = bool(company_interest)
+   has_gap = bool(gap_explanation and gap_explanation.strip())
+
+   if has_company_interest and has_gap:
+      case_to_use = "CASE 4 (6 paragraphs: both motivation and gap)"
+   elif has_company_interest:
+      case_to_use = "CASE 2 (5 paragraphs: motivation only)"
+   elif has_gap:
+      case_to_use = "CASE 3 (5 paragraphs: gap only)"
+   else:
+      case_to_use = "CASE 1 (4 paragraphs: base)"
+
    return [{
       "role": "user",
       "content": f"""
@@ -10,12 +33,15 @@ You are a professional cover letter writer specializing in authentic, grounded n
 Your goal is to connect documented experience to employer needs WITHOUT inventing claims.
 
 === TASK ===
-Write a 3-paragraph cover letter body that:
-1. Opens with clear statement of interest and relevant background
-2. Connects documented experience to job requirements
-3. Closes with genuine interest in the specific role
+Write a cover letter body that:
+1. Opens with immediate alignment and clear intent
+2. Optionally includes motivation/company interest (if provided)
+3. Provides evidence of capability through specific experience
+4. Differentiates the candidate with unique value and context
+5. Closes with forward motion and professionalism
 
 The letter must be grounded in ONLY the provided summary and bullets.
+The structure will be 4 OR 5 paragraphs depending on whether company_interest is provided.
 
 === STRICT RULES - WHAT YOU MUST NOT DO ===
 
@@ -68,24 +94,91 @@ The letter must be grounded in ONLY the provided summary and bullets.
 
 === STRUCTURE REQUIREMENTS ===
 
-Paragraph 1 (OPENING): 3-4 sentences, 60-80 words
-- State the role you're applying for
-- Briefly establish relevant background from summary
-- Create a clear hook connecting your experience to their needs
-- Do NOT use cliches like "I am writing to apply for..."
+The letter structure adapts based on which optional sections are provided:
 
-Paragraph 2 (BODY): 4-6 sentences, 100-130 words
-- Connect 2-3 key themes from bullets to job requirements
-- Use specific but grounded language
-- Reference documented accomplishments that align with role
-- Show understanding of what the role requires
-- Do NOT list bullets - synthesize themes
+CASE 1: Base structure (4 paragraphs - neither company_interest nor gap_explanation):
+   - P1: Immediate alignment and intent (60-80 words)
+   - P2: Evidence of capability (90-120 words)
+   - P3: Differentiation and context (70-100 words)
+   - P4: Forward motion and professionalism (30-50 words)
 
-Paragraph 3 (CLOSING): 2-3 sentences, 40-60 words
-- Reaffirm interest in the SPECIFIC role/company
-- Reference one concrete aspect of job or company (if info provided)
-- Professional close without desperation or excessive enthusiasm
+CASE 2: With company_interest ONLY (5 paragraphs):
+   - P1: Immediate alignment and intent (60-80 words)
+   - P2: Motivation/company interest (50-70 words)
+   - P3: Evidence of capability (90-120 words)
+   - P4: Differentiation and context (70-100 words)
+   - P5: Forward motion and professionalism (30-50 words)
+
+CASE 3: With gap_explanation ONLY (5 paragraphs):
+   - P1: Immediate alignment and intent (60-80 words)
+   - P2: Evidence of capability (90-120 words)
+   - P3: Differentiation and context (70-100 words)
+   - P4: Gap explanation (60-90 words)
+   - P5: Forward motion and professionalism (30-50 words)
+
+CASE 4: With BOTH company_interest AND gap_explanation (6 paragraphs):
+   - P1: Immediate alignment and intent (60-80 words)
+   - P2: Motivation/company interest (50-70 words)
+   - P3: Evidence of capability (90-120 words)
+   - P4: Differentiation and context (70-100 words)
+   - P5: Gap explanation (60-90 words)
+   - P6: Forward motion and professionalism (30-50 words)
+
+CRITICAL INSERTION RULES:
+- Gap explanation ALWAYS goes immediately before the closing paragraph
+- Gap explanation is ALWAYS the second-to-last paragraph
+- Motivation paragraph (if present) goes after P1 (alignment)
+- Closing paragraph is ALWAYS last
+
+Paragraph 1 (IMMEDIATE ALIGNMENT AND INTENT): 3-4 sentences, 60-80 words
+- State the role you're applying for in the opening sentence
+- Immediately establish relevant background from summary that aligns with their needs
+- Create a clear connection between your experience and what they're looking for
+- Do NOT use clichés like "I am writing to apply for..." or "I was excited to see..."
+- Focus on immediate relevance, not enthusiasm
+
+[CONDITIONAL] Paragraph 2 (MOTIVATION/COMPANY INTEREST): 2-3 sentences, 50-70 words
+- ONLY GENERATE IF company_interest is provided with at least one non-empty field
+- Synthesize the hook, alignment, and credibility anchor into a specific, grounded statement
+- Show "I chose you on purpose" without being gushy or generic
+- Reference concrete aspects: product features, tech stack, market position, problems they solve
+- Avoid mission-statement plagiarism or enthusiasm-heavy language ("thrilled", "perfect fit")
+- DO NOT invent company facts not in company_interest or company_info
+- Skip entirely if company_interest is not provided or all fields are empty
+
+Paragraph N (EVIDENCE OF CAPABILITY): 4-5 sentences, 90-120 words
+- This is P3 if motivation included, P2 if not
+- Identify 1-2 key responsibilities or requirements from the job description
+- Match them to specific documented experience from bullets
+- Use concrete but grounded language - reference actual work done
+- Show understanding of what the role requires through how you describe your experience
+- Synthesize themes across bullets rather than listing individual accomplishments
+- Do NOT invent claims or extrapolate beyond documented work
+
+Paragraph N+1 (DIFFERENTIATION AND CONTEXT): 3-4 sentences, 70-100 words
+- This is P4 if motivation included, P3 if not
+- Provide context that differentiates you or explains your career positioning
+- If job_change is True: acknowledge the transition and emphasize transferable skills/value
+- If job_change is False: emphasize depth of expertise and growth trajectory in similar roles
+- Reference unique aspects of your background that create value for this specific role
+- Use company_info (if provided) to show genuine research and alignment
+- Avoid generic statements that could apply to any candidate
+
+[CONDITIONAL] Paragraph N+2 (GAP EXPLANATION): 3-4 sentences, 60-90 words
+- ONLY GENERATE IF gap_explanation is provided and not empty
+- This paragraph is ALWAYS second-to-last (before closing)
+- Use the EXACT TEXT provided in gap_explanation parameter
+- Do NOT modify, rephrase, or embellish the provided text
+- Do NOT add additional context or commentary
+- Simply include the provided paragraph verbatim
+
+Paragraph FINAL (FORWARD MOTION AND PROFESSIONALISM): 1-2 sentences, 30-50 words
+- This is ALWAYS the last paragraph
+- Briefly reaffirm interest in the specific role and company
+- Professional, confident close without desperation or excessive enthusiasm
 - Do NOT include availability for interview - that's assumed
+- Do NOT use phrases like "I look forward to hearing from you"
+- Keep it short and direct
 
 === INPUT ===
 
@@ -110,22 +203,95 @@ RESUME BULLETS:
 JOB CHANGE CONTEXT:
 {job_change}
 
+COMPANY INTEREST (OPTIONAL):
+{company_interest_text}
+
+GAP EXPLANATION (OPTIONAL):
+{gap_explanation or "Not provided"}
+
+=== YOU MUST USE: {case_to_use} ===
+
+CONDITIONAL PARAGRAPH LOGIC:
+
+MOTIVATION PARAGRAPH:
+- IF company_interest is provided with at least one non-empty field:
+  * Generate Paragraph 2 (Motivation/Company Interest, 50-70 words)
+  * Synthesize hook, alignment, and credibility_anchor into specific, grounded statement
+  * Use "I chose you on purpose" tone, not "passionate about synergy"
+  * Reference concrete aspects (product, tech, market, problem they solve)
+  * Avoid gushy language and mission-statement plagiarism
+- IF company_interest is NOT provided or all three fields are empty:
+  * Skip Paragraph 2 entirely
+
+GAP EXPLANATION PARAGRAPH:
+- IF gap_explanation is provided and not empty:
+  * Insert gap paragraph as SECOND-TO-LAST paragraph (immediately before closing)
+  * Use VERBATIM text from gap_explanation parameter
+  * Do NOT modify, rephrase, or add commentary
+- IF gap_explanation is NOT provided or empty:
+  * Skip gap paragraph entirely
+
 === OUTPUT CONTRACT ===
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY valid JSON with this exact structure based on which optional sections are provided:
 
+CASE 1: Neither company_interest nor gap_explanation (4 paragraphs):
 {{
    "cover_letter_body": [
-      "First paragraph: opening (60-80 words)",
-      "Second paragraph: body (100-130 words)",
-      "Third paragraph: closing (40-60 words)"
+      "Paragraph 1: immediate alignment and intent (60-80 words)",
+      "Paragraph 2: evidence of capability (90-120 words)",
+      "Paragraph 3: differentiation and context (70-100 words)",
+      "Paragraph 4: forward motion and professionalism (30-50 words)"
+   ]
+}}
+
+CASE 2: company_interest ONLY (5 paragraphs):
+{{
+   "cover_letter_body": [
+      "Paragraph 1: immediate alignment and intent (60-80 words)",
+      "Paragraph 2: motivation/company interest (50-70 words)",
+      "Paragraph 3: evidence of capability (90-120 words)",
+      "Paragraph 4: differentiation and context (70-100 words)",
+      "Paragraph 5: forward motion and professionalism (30-50 words)"
+   ]
+}}
+
+CASE 3: gap_explanation ONLY (5 paragraphs):
+{{
+   "cover_letter_body": [
+      "Paragraph 1: immediate alignment and intent (60-80 words)",
+      "Paragraph 2: evidence of capability (90-120 words)",
+      "Paragraph 3: differentiation and context (70-100 words)",
+      "Paragraph 4: gap explanation - VERBATIM from input (60-90 words)",
+      "Paragraph 5: forward motion and professionalism (30-50 words)"
+   ]
+}}
+
+CASE 4: BOTH company_interest AND gap_explanation (6 paragraphs):
+{{
+   "cover_letter_body": [
+      "Paragraph 1: immediate alignment and intent (60-80 words)",
+      "Paragraph 2: motivation/company interest (50-70 words)",
+      "Paragraph 3: evidence of capability (90-120 words)",
+      "Paragraph 4: differentiation and context (70-100 words)",
+      "Paragraph 5: gap explanation - VERBATIM from input (60-90 words)",
+      "Paragraph 6: forward motion and professionalism (30-50 words)"
    ]
 }}
 
 REQUIREMENTS:
-- Exactly 3 paragraphs as array elements
+- CRITICAL: The JSON array MUST contain EXACTLY the number of elements specified by your case:
+  * CASE 1: Exactly 4 array elements
+  * CASE 2: Exactly 5 array elements
+  * CASE 3: Exactly 5 array elements
+  * CASE 4: Exactly 6 array elements
 - Each paragraph is a single string (complete paragraph, not individual sentences)
-- Total word count: 200-270 words
+- DO NOT combine paragraphs - each must be separate
+- Gap explanation (if included) uses EXACT TEXT from gap_explanation parameter
+- Total word count varies by structure:
+  * 4 paragraphs: 250-400 words
+  * 5 paragraphs: 300-470 words
+  * 6 paragraphs: 350-540 words
 - No additional keys or fields
 
 === VERIFICATION CHECKLIST ===
@@ -134,23 +300,36 @@ Before returning your response, verify:
 1. Every claim is grounded in summary or bullets
 2. No technologies mentioned that aren't in the resume content
 3. No unverifiable personality claims or enthusiasm statements
-4. Paragraphs meet length requirements
+4. Paragraphs meet length requirements based on structure:
+   - 4 paragraphs: (60-80, 90-120, 70-100, 30-50 words)
+   - 5 paragraphs with motivation: (60-80, 50-70, 90-120, 70-100, 30-50 words)
+   - 5 paragraphs with gap: (60-80, 90-120, 70-100, 60-90, 30-50 words)
+   - 6 paragraphs: (60-80, 50-70, 90-120, 70-100, 60-90, 30-50 words)
 5. Letter is specific to THIS job/company, not generic
 6. Tone is professional and authentic, not desperate or hyperbolic
-7. JSON is valid with exactly 3 array elements
+7. JSON is valid with exactly 4, 5, OR 6 array elements (based on optional sections)
+8. Total word count matches structure:
+   - 4 paragraphs: 250-400 words
+   - 5 paragraphs: 300-470 words
+   - 6 paragraphs: 350-540 words
+9. If Paragraph 2 (motivation) is included, it avoids gushy language and mission-statement plagiarism
+10. If gap explanation is included, it uses VERBATIM text from gap_explanation parameter
 """
    }]
 
 def generate_cover_letter(resume_data, job_title, job_description, company_name,
-                           company_info, job_change):
-   
+                           company_info, job_change, company_interest=None,
+                           gap_explanation=None):
+
    bullets = resume_data["spins"] + resume_data["programmer"] + resume_data["analyst"]
 
    result = call_openai_json(
       cover_letter_prompt(
             resume_data["summary"], bullets,
             job_title, job_description,
-            company_name, company_info, job_change
+            company_name, company_info, job_change,
+            company_interest,
+            gap_explanation
       ),
       temperature=0.7
    )
