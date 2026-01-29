@@ -14,9 +14,13 @@ venv/
 
 # Bullet lists
 bullet_libs/
-
 # Except the example bullet list
 !bullet_libs/bullet_example.json
+
+# Gap Text Explanations
+gap_libs
+# Except the example gap text file
+!gap_libs/example_gap.json
 
 # Generated PDF files
 output/
