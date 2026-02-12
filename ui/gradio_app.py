@@ -14,6 +14,13 @@ from ui.resume_helpers import (
     load_gap_explanation,
     derive_gap_file_from_bullet_file
 )
+from ui.bullet_editor_helpers import (
+    load_bullet_library,
+    save_bullet_library,
+    create_new_bullet_library,
+    count_bullets,
+    get_validation_summary
+)
 
 BULLET_DIR = "bullet_libs"
 excluded_list = ["bullet_example.json"]
@@ -91,9 +98,9 @@ def handle_pdf_generation(html_content):
 
 
 def handle_generate_cover_letter(summary_text, spins_text, programmer_text, analyst_text,
-                                   jd, job_title, company, info, job_change,
-                                   company_hook, personal_alignment, credibility_anchor,
-                                   include_gap, gap_text):
+                                    jd, job_title, company, info, job_change,
+                                    company_hook, personal_alignment, credibility_anchor,
+                                    include_gap, gap_text):
     """Generate cover letter from edited resume content and job details."""
     try:
         # Validate required inputs
@@ -189,6 +196,195 @@ def handle_gap_role_change(gap_file_path):
     return gap_text
 
 
+def handle_load_bullet_library(file_path):
+    """Load bullet library from file."""
+    if not file_path:
+        return (
+            gr.update(),  # role_editor
+            gr.update(),  # bullets_editor
+            gr.update(visible=False),  # editor_group
+            "Please select a file",  # editor_status
+            "",  # current_bullet_file_path
+            "",  # original_role
+            "",  # original_bullets_text
+            "0 bullets",  # bullet_count_display
+            "Ready"  # validation_display
+        )
+
+    role, bullets_text, status = load_bullet_library(file_path)
+
+    if not role:  # Error occurred
+        return (
+            gr.update(),  # role_editor
+            gr.update(),  # bullets_editor
+            gr.update(visible=False),  # editor_group
+            status,  # editor_status
+            "",  # current_bullet_file_path
+            "",  # original_role
+            "",  # original_bullets_text
+            "0 bullets",  # bullet_count_display
+            "Ready"  # validation_display
+        )
+
+    # Success
+    bullet_count = count_bullets(bullets_text)
+    validation = get_validation_summary(bullets_text)
+
+    return (
+        gr.update(value=role),  # role_editor
+        gr.update(value=bullets_text),  # bullets_editor
+        gr.update(visible=True),  # editor_group
+        status,  # editor_status
+        file_path,  # current_bullet_file_path
+        role,  # original_role
+        bullets_text,  # original_bullets_text
+        f"{bullet_count} bullets",  # bullet_count_display
+        validation  # validation_display
+    )
+
+
+def handle_create_new_library(role_name):
+    """Create new bullet library file."""
+    if not role_name or not role_name.strip():
+        return (
+            gr.update(),  # role_editor
+            gr.update(),  # bullets_editor
+            gr.update(visible=False),  # editor_group
+            "Please enter a role name",  # editor_status
+            "",  # current_bullet_file_path
+            "",  # original_role
+            "",  # original_bullets_text
+            "0 bullets",  # bullet_count_display
+            "Ready",  # validation_display
+            gr.update()  # new_role_name (don't clear on error)
+        )
+
+    success, file_path, status = create_new_bullet_library(role_name)
+
+    if not success:
+        return (
+            gr.update(),  # role_editor
+            gr.update(),  # bullets_editor
+            gr.update(visible=False),  # editor_group
+            status,  # editor_status
+            "",  # current_bullet_file_path
+            "",  # original_role
+            "",  # original_bullets_text
+            "0 bullets",  # bullet_count_display
+            "Ready",  # validation_display
+            gr.update()  # new_role_name (don't clear on error)
+        )
+
+    # Success - show editor with empty bullets
+    return (
+        gr.update(value=role_name.strip()),  # role_editor
+        gr.update(value=""),  # bullets_editor (empty)
+        gr.update(visible=True),  # editor_group
+        status,  # editor_status
+        file_path,  # current_bullet_file_path
+        role_name.strip(),  # original_role
+        "",  # original_bullets_text (empty)
+        "0 bullets",  # bullet_count_display
+        "✓ All bullets valid",  # validation_display
+        gr.update(value="")  # new_role_name (clear on success)
+    )
+
+
+def handle_save_bullet_library(file_path, role, bullets_text):
+    """Save bullet library to file."""
+    if not file_path:
+        return (
+            "Error: No file loaded",  # editor_status
+            gr.update(),  # original_role
+            gr.update(),  # original_bullets_text
+            gr.update()  # bullet_lib_dropdown
+        )
+
+    success, status = save_bullet_library(file_path, role, bullets_text)
+
+    if success:
+        # Update original states (new baseline)
+        return (
+            status,  # editor_status
+            role,  # original_role (new baseline)
+            bullets_text,  # original_bullets_text (new baseline)
+            gr.update(choices=list_bullet_files())  # refresh dropdown
+        )
+    else:
+        return (
+            status,  # editor_status
+            gr.update(),  # original_role (no change)
+            gr.update(),  # original_bullets_text (no change)
+            gr.update()  # bullet_lib_dropdown (no change)
+        )
+
+
+def handle_discard_changes(original_role, original_bullets_text):
+    """Discard changes and restore original values."""
+    bullet_count = count_bullets(original_bullets_text)
+    validation = get_validation_summary(original_bullets_text)
+
+    return (
+        gr.update(value=original_role),  # role_editor
+        gr.update(value=original_bullets_text),  # bullets_editor
+        f"{bullet_count} bullets",  # bullet_count_display
+        validation,  # validation_display
+        "Changes discarded"  # editor_status
+    )
+
+
+def handle_refresh_from_file(file_path):
+    """Reload bullet library from file, discarding unsaved changes."""
+    if not file_path:
+        return (
+            gr.update(),  # role_editor
+            gr.update(),  # bullets_editor
+            "0 bullets",  # bullet_count_display
+            "Ready",  # validation_display
+            "Error: No file loaded",  # editor_status
+            "",  # original_role
+            ""  # original_bullets_text
+        )
+
+    role, bullets_text, status = load_bullet_library(file_path)
+
+    if not role:  # Error occurred
+        return (
+            gr.update(),  # role_editor
+            gr.update(),  # bullets_editor
+            "0 bullets",  # bullet_count_display
+            "Ready",  # validation_display
+            status,  # editor_status
+            "",  # original_role
+            ""  # original_bullets_text
+        )
+
+    # Success
+    bullet_count = count_bullets(bullets_text)
+    validation = get_validation_summary(bullets_text)
+
+    return (
+        gr.update(value=role),  # role_editor
+        gr.update(value=bullets_text),  # bullets_editor
+        f"{bullet_count} bullets",  # bullet_count_display
+        validation,  # validation_display
+        status,  # editor_status
+        role,  # original_role (update baseline)
+        bullets_text  # original_bullets_text (update baseline)
+    )
+
+
+def handle_bullets_change(bullets_text):
+    """Update displays when bullets text changes."""
+    bullet_count = count_bullets(bullets_text)
+    validation = get_validation_summary(bullets_text)
+
+    return (
+        f"{bullet_count} bullets",  # bullet_count_display
+        validation  # validation_display
+    )
+
+
 def launch_app():
     with gr.Blocks() as demo:
         gr.Markdown("## Resume Forge")
@@ -226,14 +422,65 @@ def launch_app():
             edit_programmer = gr.Textbox(label="Programmer Bullets (one per line)", lines=12, interactive=True)
             edit_analyst = gr.Textbox(label="Analyst Bullets (one per line)", lines=12, interactive=True)
 
-        # Tab 3: Preview & Export
+        # Tab 3: Bullet Library Editor
+        with gr.Tab("Bullet Library Editor"):
+            gr.Markdown("### Edit Bullet Libraries\nManage bullet library files (bullet_libs/*.json)")
+
+            # File Selection Section
+            with gr.Row():
+                bullet_lib_dropdown = gr.Dropdown(
+                    label="Select Bullet Library File",
+                    choices=list_bullet_files(),
+                    value=None
+                )
+                load_file_btn = gr.Button("Load File")
+
+            gr.Markdown("---\n**OR create a new bullet library:**")
+
+            with gr.Row():
+                new_role_name = gr.Textbox(
+                    label="New Role Name",
+                    placeholder="e.g., Software Developer, Help Desk"
+                )
+                create_new_btn = gr.Button("Create New Library", variant="secondary")
+
+            gr.Markdown("---")
+
+            # Editor Section (hidden until file loaded/created)
+            with gr.Group(visible=False) as editor_group:
+                role_editor = gr.Textbox(label="Role Name", lines=1)
+
+                bullets_editor = gr.Textbox(
+                    label="Bullets (one per line)",
+                    lines=25,
+                    max_lines=100,
+                    info="Enter one bullet per line. No periods at end."
+                )
+
+                with gr.Row():
+                    bullet_count_display = gr.Label(label="\nBullet Count", value="0 bullets")
+                    validation_display = gr.Label(label="Text Validation", value="Ready")
+
+                with gr.Row():
+                    save_btn = gr.Button("Save Changes", variant="primary")
+                    discard_btn = gr.Button("Discard Changes", variant="secondary")
+                    refresh_btn = gr.Button("Refresh from File", variant="secondary")
+
+            editor_status = gr.Textbox(label="Status", interactive=False, lines=2)
+
+            # Hidden state variables
+            current_bullet_file_path = gr.State(value="")
+            original_role = gr.State(value="")
+            original_bullets_text = gr.State(value="")
+
+        # Tab 4: Preview & Export (Resume)
         with gr.Tab("Preview & Export") as preview_tab:
             preview_html = gr.HTML(label="Resume Preview")
             generate_pdf_btn = gr.Button("Generate PDF")
             pdf_file_output = gr.File(label="Download PDF")
             status_message = gr.Textbox(label="Status", interactive=False)
 
-        # Tab 4: Generate Cover Letter
+        # Tab 5: Generate Cover Letter
         with gr.Tab("Generate Cover Letter"):
             gr.Markdown("""
             ### Cover Letter Generation
@@ -302,14 +549,14 @@ def launch_app():
             generate_cover_btn = gr.Button("Generate Cover Letter", variant="primary")
             cover_output = gr.JSON(label="Cover Letter Data")
 
-        # Tab 5: Cover Letter Preview & Export
+        # Tab 6: Cover Letter Preview & Export
         with gr.Tab("Cover Letter Preview & Export") as cover_preview_tab:
             cover_preview_html = gr.HTML(label="Cover Letter Preview")
             generate_cover_pdf_btn = gr.Button("Generate PDF")
             cover_pdf_file_output = gr.File(label="Download Cover Letter PDF")
             cover_status_message = gr.Textbox(label="Status", interactive=False)
 
-        # Event handlers
+        # Event handlers (Tab 1: Generate)
         run.click(
             fn=handle_generate,
             inputs=[jd, job_title, company, info, bullet_file, job_change],
@@ -328,6 +575,50 @@ def launch_app():
             ]
         )
 
+        # Event handlers (Tab 3: Bullet Library Editor)
+        load_file_btn.click(
+            fn=handle_load_bullet_library,
+            inputs=bullet_lib_dropdown,
+            outputs=[role_editor, bullets_editor, editor_group, editor_status,
+                    current_bullet_file_path, original_role, original_bullets_text,
+                    bullet_count_display, validation_display]
+        )
+
+        create_new_btn.click(
+            fn=handle_create_new_library,
+            inputs=new_role_name,
+            outputs=[role_editor, bullets_editor, editor_group, editor_status,
+                    current_bullet_file_path, original_role, original_bullets_text,
+                    bullet_count_display, validation_display, new_role_name]
+        )
+
+        save_btn.click(
+            fn=handle_save_bullet_library,
+            inputs=[current_bullet_file_path, role_editor, bullets_editor],
+            outputs=[editor_status, original_role, original_bullets_text, bullet_lib_dropdown]
+        )
+
+        discard_btn.click(
+            fn=handle_discard_changes,
+            inputs=[original_role, original_bullets_text],
+            outputs=[role_editor, bullets_editor, bullet_count_display,
+                    validation_display, editor_status]
+        )
+
+        refresh_btn.click(
+            fn=handle_refresh_from_file,
+            inputs=current_bullet_file_path,
+            outputs=[role_editor, bullets_editor, bullet_count_display,
+                    validation_display, editor_status, original_role, original_bullets_text]
+        )
+
+        bullets_editor.change(
+            fn=handle_bullets_change,
+            inputs=bullets_editor,
+            outputs=[bullet_count_display, validation_display]
+        )
+
+        # Event handlers (Tab 4: Preview & Export)
         # Auto-update preview when tab is selected
         preview_tab.select(
             fn=handle_preview_update,
@@ -389,3 +680,7 @@ def launch_app():
         )
 
     demo.launch(theme=gr.themes.Soft())
+
+
+if __name__ == "__main__":
+    launch_app()
