@@ -21,6 +21,18 @@ from ui.bullet_editor_helpers import (
     count_bullets,
     get_validation_summary
 )
+from ui.ui_formatters import (
+    format_removed_bullet_display,
+    format_suggestion_choices,
+    format_suggestion_explanation,
+    format_skills_coverage_warning,
+    format_replacement_success,
+    create_error_response,
+    sync_bullet_choices,
+    create_hidden_ui_state,
+    enrich_section_lists_with_ids,
+    create_bullet_library_response
+)
 
 BULLET_DIR = "bullet_libs"
 excluded_list = ["bullet_example.json"]
@@ -36,55 +48,62 @@ def list_bullet_files():
     ])
 
 
-def handle_generate(jd, job_title, company, info, bullet_file, job_change):
+def handle_generate(jd, job_title, company, info, bullet_file, job_change, progress=gr.Progress()):
     """Generate resume and populate all tabs."""
+    progress(0.0, desc="Starting generation...")
+
     if not bullet_file:
-        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", []
+        error_status = gr.Markdown(value="❌ Please select a bullet file", visible=True)
+        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
+    progress(0.2, desc="Calling resume engine...")
     result_obj = generate_resume_adapter(jd, company, info, bullet_file, job_change)
 
     # Check for failure
     if isinstance(result_obj, Failure):
         error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
-        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", []
+        error_status = gr.Markdown(value=f"❌ {result_obj.error_message}", visible=True)
+        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
 
     # Extract result from Success
+    progress(0.5, desc="Processing results...")
     result = result_obj.value
 
-    # Extract plain lists (no parsing needed)
+    # Extract section lists and intelligence metadata
     summary = result["summary"]
     spins_list = result["spins"]
     programmer_list = result["programmer"]
     analyst_list = result["analyst"]
-
-    # NEW: Extract intelligence metadata
     metadata = result.get("metadata", {})
     analyzed_bullets = metadata.get("analyzed_bullets", [])
     jd_analysis = metadata.get("jd_analysis", {})
     used_bullet_ids = metadata.get("used_bullet_ids", set())
 
-    # Build bullet lookup map (text → full bullet data)
-    bullet_map = {b["text"]: b for b in analyzed_bullets}
-
     # Enhance section lists with IDs for tracking
-    def add_bullet_ids(text_list):
-        return [bullet_map.get(text, {"text": text, "bullet_id": ""}) for text in text_list]
-
-    spins_with_ids = add_bullet_ids(spins_list)
-    programmer_with_ids = add_bullet_ids(programmer_list)
-    analyst_with_ids = add_bullet_ids(analyst_list)
+    progress(0.7, desc="Building intelligence metadata...")
+    spins_with_ids, programmer_with_ids, analyst_with_ids = enrich_section_lists_with_ids(
+        spins_list, programmer_list, analyst_list, analyzed_bullets
+    )
 
     # Convert to text for textboxes
     spins_text = bullets_to_text(spins_list)
     programmer_text = bullets_to_text(programmer_list)
     analyst_text = bullets_to_text(analyst_list)
 
-    # Phase 3: Create canonical state (single source of truth)
+    # Create canonical state (single source of truth)
+    progress(0.9, desc="Creating canonical state...")
     from app.data_extractors import create_canonical_bullets
     canonical_bullets = create_canonical_bullets(spins_with_ids, programmer_with_ids, analyst_with_ids)
 
-    # Return includes new intelligence states
+    # Create radio choices for bullet selection
+    spins_radio_choices = sync_bullet_choices(spins_text)
+    programmer_radio_choices = sync_bullet_choices(programmer_text)
+    analyst_radio_choices = sync_bullet_choices(analyst_text)
+
+    progress(1.0, desc="Complete!")
+    success_status = gr.Markdown(value="✓ Resume generated successfully", visible=True)
+
     return (
         result,                # JSON output
         summary,               # Edit: summary textbox
@@ -97,11 +116,15 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change):
         analyst_with_ids,      # State: analyst (NOW includes IDs)
         job_title,            # State: job_title
         bullet_file,          # State: selected_bullet_file
-        analyzed_bullets,      # State: analyzed_bullets (NEW)
-        jd_analysis,           # State: jd_analysis (NEW)
-        used_bullet_ids,       # State: used_bullet_ids (NEW)
-        jd,                    # State: job_description (NEW)
-        canonical_bullets      # State: canonical_bullets (Phase 3)
+        analyzed_bullets,      # State: analyzed_bullets
+        jd_analysis,           # State: jd_analysis
+        used_bullet_ids,       # State: used_bullet_ids
+        jd,                    # State: job_description
+        canonical_bullets,     # State: canonical_bullets
+        gr.Radio(choices=spins_radio_choices, value=spins_radio_choices[0][1] if spins_radio_choices else None),  # spins_bullet_radio
+        gr.Radio(choices=programmer_radio_choices, value=programmer_radio_choices[0][1] if programmer_radio_choices else None),  # programmer_bullet_radio
+        gr.Radio(choices=analyst_radio_choices, value=analyst_radio_choices[0][1] if analyst_radio_choices else None),  # analyst_bullet_radio
+        success_status         # generate_status
     )
 
 
@@ -147,22 +170,29 @@ def handle_pdf_generation(html_content):
 def handle_generate_cover_letter(summary_text, spins_text, programmer_text, analyst_text,
                                     jd, job_title, company, info, job_change,
                                     company_hook, personal_alignment, credibility_anchor,
-                                    include_gap, gap_text):
+                                    include_gap, gap_text, progress=gr.Progress()):
     """Generate cover letter from edited resume content and job details."""
+    progress(0.0, desc="Starting cover letter generation...")
+
     # Validate required inputs (UI-level validation)
     if not summary_text or not summary_text.strip():
-        return {"error": "Please generate a resume first"}, ""
+        error_status = gr.Markdown(value="❌ Please generate a resume first", visible=True)
+        return {"error": "Please generate a resume first"}, "", error_status
 
     if not job_title or not job_title.strip():
-        return {"error": "Please enter a job title in the Generate tab"}, ""
+        error_status = gr.Markdown(value="❌ Please enter a job title in the Generate tab", visible=True)
+        return {"error": "Please enter a job title in the Generate tab"}, "", error_status
 
     if not jd or not jd.strip():
-        return {"error": "Job description is required"}, ""
+        error_status = gr.Markdown(value="❌ Job description is required", visible=True)
+        return {"error": "Job description is required"}, "", error_status
 
     if not company or not company.strip():
-        return {"error": "Company name is required"}, ""
+        error_status = gr.Markdown(value="❌ Company name is required", visible=True)
+        return {"error": "Company name is required"}, "", error_status
 
     # Convert edit textboxes to bullet lists
+    progress(0.2, desc="Processing resume data...")
     spins_list = text_to_bullets(spins_text)
     programmer_list = text_to_bullets(programmer_text)
     analyst_list = text_to_bullets(analyst_text)
@@ -190,6 +220,7 @@ def handle_generate_cover_letter(summary_text, spins_text, programmer_text, anal
         gap_explanation = gap_text.strip()
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
+    progress(0.4, desc="Calling cover letter engine...")
     result_obj = generate_cover_letter_adapter(
         resume_data, job_title, jd, company, info, job_change,
         company_interest,
@@ -199,17 +230,22 @@ def handle_generate_cover_letter(summary_text, spins_text, programmer_text, anal
     # Check for failure
     if isinstance(result_obj, Failure):
         error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
-        return error_output, ""
+        error_status = gr.Markdown(value=f"❌ {result_obj.error_message}", visible=True)
+        return error_output, "", error_status
 
     # Extract cover letter HTML from Success
+    progress(0.8, desc="Formatting cover letter...")
     cover_letter_html = result_obj.value
+
+    progress(1.0, desc="Complete!")
+    success_status = gr.Markdown(value="✓ Cover letter generated successfully", visible=True)
 
     # Return JSON output and HTML state
     return {
         "status": "success",
         "paragraphs": cover_letter_html.count("<p>"),
         "preview": cover_letter_html[:200] + "..."
-    }, cover_letter_html
+    }, cover_letter_html, success_status
 
 
 def handle_cover_letter_preview_update(cover_letter_html):
@@ -250,47 +286,25 @@ def handle_gap_role_change(gap_file_path):
 def handle_load_bullet_library(file_path):
     """Load bullet library from file."""
     if not file_path:
-        return (
-            gr.update(),  # role_editor
-            gr.update(),  # bullets_editor
-            gr.update(visible=False),  # editor_group
-            "Please select a file",  # editor_status
-            "",  # current_bullet_file_path
-            "",  # original_role
-            "",  # original_bullets_text
-            "0 bullets",  # bullet_count_display
-            "Ready"  # validation_display
-        )
+        return create_bullet_library_response(False, status="Please select a file")
 
     role, bullets_text, status = load_bullet_library(file_path)
 
     if not role:  # Error occurred
-        return (
-            gr.update(),  # role_editor
-            gr.update(),  # bullets_editor
-            gr.update(visible=False),  # editor_group
-            status,  # editor_status
-            "",  # current_bullet_file_path
-            "",  # original_role
-            "",  # original_bullets_text
-            "0 bullets",  # bullet_count_display
-            "Ready"  # validation_display
-        )
+        return create_bullet_library_response(False, status=status)
 
-    # Success
+    # Success - get metadata and create response
     bullet_count = count_bullets(bullets_text)
     validation = get_validation_summary(bullets_text)
 
-    return (
-        gr.update(value=role),  # role_editor
-        gr.update(value=bullets_text),  # bullets_editor
-        gr.update(visible=True),  # editor_group
-        status,  # editor_status
-        file_path,  # current_bullet_file_path
-        role,  # original_role
-        bullets_text,  # original_bullets_text
-        f"{bullet_count} bullets",  # bullet_count_display
-        validation  # validation_display
+    return create_bullet_library_response(
+        True,
+        role=role,
+        bullets_text=bullets_text,
+        status=status,
+        file_path=file_path,
+        bullet_count=bullet_count,
+        validation=validation
     )
 
 
@@ -465,7 +479,6 @@ def handle_get_suggestions(
             analyzed_bullets, jd_analysis, used_bullet_ids
         )
     except ValidationError as e:
-        error_msg = f"❌ {str(e)}"
         return (
             gr.Markdown(value="", visible=False),
             gr.Radio(choices=[], visible=False),
@@ -476,57 +489,33 @@ def handle_get_suggestions(
             {},
             gr.Button(visible=False),
             gr.Button(visible=False),
-            gr.Markdown(value=error_msg, visible=True)
+            gr.Markdown(value=f"❌ {str(e)}", visible=True)
         )
 
-    # Format removed bullet display
-    removed_bullet = result["removed_bullet"]
-    removed_text = removed_bullet.get("text", str(removed_bullet))
-    removed_display = f"""#### Replacing Bullet #{bullet_index}:
-**Original:** {removed_text[:150]}{"..." if len(removed_text) > 150 else ""}
+    # Format UI components using helpers
+    removed_display = format_removed_bullet_display(result["removed_bullet"], bullet_index)
+    choices = format_suggestion_choices(result["suggestions"])
 
-**Category:** {removed_bullet.get('category', 'unknown')} | **JD Score:** {removed_bullet.get('jd_score', 0)}
-"""
-
-    # Format suggestions for radio
-    suggestions = result["suggestions"]
-    choices = []
-    for sugg in suggestions:
-        bullet = sugg["bullet"]
-        score = sugg["score"]
-        text = bullet["text"]
-        display_text = text[:100] + "..." if len(text) > 100 else text
-        choice_label = f"⭐ {score:.1f} | [{bullet['category']}] {display_text}"
-        choices.append((choice_label, bullet["bullet_id"]))
-
-    # First suggestion explanation
+    # Format first suggestion explanation
     first_explanation = ""
-    if suggestions:
-        first_explanation = f"""#### Why This Suggestion?
-{suggestions[0]['explanation']}
+    if result["suggestions"]:
+        first_explanation = format_suggestion_explanation(result["suggestions"][0])
 
-**Details:**
-- **Category:** {suggestions[0]['bullet']['category']}
-- **Keywords:** {', '.join(suggestions[0]['bullet']['keywords'][:5])}
-- **Has Impact:** {'✓ Yes' if suggestions[0]['bullet']['has_impact'] else '✗ No'}
-- **JD Score:** {suggestions[0]['bullet']['jd_score']}
-"""
-
-    # Skills coverage warning
-    coverage_msg = ""
+    # Format skills coverage warning if present
+    coverage_warning = None
     if result.get("skills_coverage_warning"):
-        coverage_msg = f"""⚠️ **Skills Coverage Warning**
-{result['skills_coverage_warning']}
-"""
+        # Extract overlap info from warning message (parsing existing format)
+        warning_msg = result["skills_coverage_warning"]
+        coverage_warning = gr.Markdown(value=f"⚠️ **Skills Coverage Warning**\n{warning_msg}", visible=True)
 
     return (
         gr.Markdown(value=removed_display, visible=True),
         gr.Radio(choices=choices, value=choices[0][1] if choices else None, visible=True),
         gr.Markdown(value=first_explanation, visible=True),
-        gr.Markdown(value=coverage_msg, visible=True) if coverage_msg else gr.Markdown(value="", visible=False),
+        coverage_warning if coverage_warning else gr.Markdown(value="", visible=False),
         result["target_section"],
         result["target_index"],
-        removed_bullet,
+        result["removed_bullet"],
         gr.Button(visible=True),
         gr.Button(visible=True),
         gr.Markdown(value="", visible=False)
@@ -578,6 +567,7 @@ def handle_confirm_replacement(
     """
     from app.replacement_engine import execute_replacement
     from app.exceptions import ValidationError
+    from app.data_extractors import create_canonical_bullets
 
     # Call business logic
     try:
@@ -587,19 +577,16 @@ def handle_confirm_replacement(
             analyzed_bullets, used_bullet_ids
         )
     except ValidationError as e:
-        error_msg = f"❌ Error: {str(e)}"
-        return tuple([gr.Markdown(value=error_msg, visible=True)] + [gr.update()] * 13)
+        return create_error_response(f"Error: {str(e)}", 14)
 
-    # Format success message for UI
-    replacement_bullet = result["replacement_bullet"]
-    success_msg = f"""✓ **Replacement Complete!**
-Bullet #{target_index + 1} in {target_section} updated.
+    # Format success message using helper
+    success_msg = format_replacement_success(
+        target_section,
+        target_index,
+        result["replacement_bullet"]
+    )
 
-**New bullet:** {replacement_bullet['text'][:100]}...
-"""
-
-    # Phase 3: Update canonical state after replacement
-    from app.data_extractors import create_canonical_bullets
+    # Update canonical state after replacement
     updated_canonical = create_canonical_bullets(
         result["updated_spins"],
         result["updated_programmer"],
@@ -621,7 +608,7 @@ Bullet #{target_index + 1} in {target_section} updated.
         gr.Markdown(value="", visible=False),
         gr.Button(visible=False),
         gr.Button(visible=False),
-        updated_canonical  # Phase 3: Return updated canonical state
+        updated_canonical
     )
 
 
@@ -676,6 +663,7 @@ def launch_app():
             output = gr.JSON()
 
             run = gr.Button("Generate Resume")
+            generate_status = gr.Markdown(value="", visible=False)
 
         # Tab 2: Edit
         with gr.Tab("Edit"):
@@ -696,14 +684,15 @@ def launch_app():
                             lines=12,
                             interactive=True
                         )
-                        with gr.Row():
-                            spins_bullet_index = gr.Number(
-                                label="Bullet # to replace",
-                                value=1,
-                                precision=0,
-                                minimum=1
-                            )
-                            open_replacement_spins = gr.Button("Get Suggestions", size="sm", variant="primary")
+                        gr.Markdown("**Select bullet to replace:**")
+                        spins_bullet_radio = gr.Radio(
+                            label="",
+                            choices=[],
+                            value=None,
+                            interactive=True
+                        )
+                        open_replacement_spins = gr.Button("Get Suggestions for Selected Bullet", size="sm", variant="primary")
+                        spins_suggestion_status = gr.Markdown(value="", visible=False)
 
                     with gr.Accordion("Programmer Bullets (Technical Implementation)", open=True):
                         edit_programmer = gr.Textbox(
@@ -711,14 +700,15 @@ def launch_app():
                             lines=12,
                             interactive=True
                         )
-                        with gr.Row():
-                            programmer_bullet_index = gr.Number(
-                                label="Bullet # to replace",
-                                value=1,
-                                precision=0,
-                                minimum=1
-                            )
-                            open_replacement_programmer = gr.Button("Get Suggestions", size="sm", variant="primary")
+                        gr.Markdown("**Select bullet to replace:**")
+                        programmer_bullet_radio = gr.Radio(
+                            label="",
+                            choices=[],
+                            value=None,
+                            interactive=True
+                        )
+                        open_replacement_programmer = gr.Button("Get Suggestions for Selected Bullet", size="sm", variant="primary")
+                        programmer_suggestion_status = gr.Markdown(value="", visible=False)
 
                     with gr.Accordion("Analyst Bullets (Analysis & Documentation)", open=True):
                         edit_analyst = gr.Textbox(
@@ -726,14 +716,15 @@ def launch_app():
                             lines=12,
                             interactive=True
                         )
-                        with gr.Row():
-                            analyst_bullet_index = gr.Number(
-                                label="Bullet # to replace",
-                                value=1,
-                                precision=0,
-                                minimum=1
-                            )
-                            open_replacement_analyst = gr.Button("Get Suggestions", size="sm", variant="primary")
+                        gr.Markdown("**Select bullet to replace:**")
+                        analyst_bullet_radio = gr.Radio(
+                            label="",
+                            choices=[],
+                            value=None,
+                            interactive=True
+                        )
+                        open_replacement_analyst = gr.Button("Get Suggestions for Selected Bullet", size="sm", variant="primary")
+                        analyst_suggestion_status = gr.Markdown(value="", visible=False)
 
                 # Right column: Intelligent Suggestions Panel (NEW)
                 with gr.Column(scale=1) as suggestions_panel:
@@ -915,6 +906,7 @@ def launch_app():
             )
 
             generate_cover_btn = gr.Button("Generate Cover Letter", variant="primary")
+            cover_generation_status = gr.Markdown(value="", visible=False)
             cover_output = gr.JSON(label="Cover Letter Data")
 
         # Tab 6: Cover Letter Preview & Export
@@ -944,7 +936,11 @@ def launch_app():
                 state_jd_analysis,           # NEW: JD keywords/skills
                 state_used_bullet_ids,       # NEW: Track active bullets
                 state_job_description,       # NEW: Preserve JD for suggestions
-                state_canonical_bullets      # Phase 3: Canonical state (single source of truth)
+                state_canonical_bullets,     # Phase 3: Canonical state (single source of truth)
+                spins_bullet_radio,          # Radio: SPINS bullet selection
+                programmer_bullet_radio,     # Radio: Programmer bullet selection
+                analyst_bullet_radio,        # Radio: Analyst bullet selection
+                generate_status              # Status: Generation status message
             ]
         )
 
@@ -1015,7 +1011,7 @@ def launch_app():
                 company_hook, personal_alignment, credibility_anchor,
                 include_gap, gap_text
             ],
-            outputs=[cover_output, state_cover_letter_html]
+            outputs=[cover_output, state_cover_letter_html, cover_generation_status]
         )
 
         # Auto-update cover letter preview when tab selected
@@ -1059,7 +1055,7 @@ def launch_app():
             fn=handle_get_suggestions,
             inputs=[
                 gr.State(value="SPINS"),
-                spins_bullet_index,
+                spins_bullet_radio,
                 state_spins,
                 state_programmer,
                 state_analyst,
@@ -1086,7 +1082,7 @@ def launch_app():
             fn=handle_get_suggestions,
             inputs=[
                 gr.State(value="Programmer"),
-                programmer_bullet_index,
+                programmer_bullet_radio,
                 state_spins,
                 state_programmer,
                 state_analyst,
@@ -1113,7 +1109,7 @@ def launch_app():
             fn=handle_get_suggestions,
             inputs=[
                 gr.State(value="Analyst"),
-                analyst_bullet_index,
+                analyst_bullet_radio,
                 state_spins,
                 state_programmer,
                 state_analyst,
@@ -1186,6 +1182,25 @@ def launch_app():
                 cancel_replace_btn,
                 replacement_status
             ]
+        )
+
+        # Sync radio choices when bullets are edited (Phase 2: Radio Selection)
+        edit_spins.change(
+            fn=lambda text: gr.Radio(choices=sync_bullet_choices(text), value=sync_bullet_choices(text)[0][1] if sync_bullet_choices(text) else None),
+            inputs=[edit_spins],
+            outputs=[spins_bullet_radio]
+        )
+
+        edit_programmer.change(
+            fn=lambda text: gr.Radio(choices=sync_bullet_choices(text), value=sync_bullet_choices(text)[0][1] if sync_bullet_choices(text) else None),
+            inputs=[edit_programmer],
+            outputs=[programmer_bullet_radio]
+        )
+
+        edit_analyst.change(
+            fn=lambda text: gr.Radio(choices=sync_bullet_choices(text), value=sync_bullet_choices(text)[0][1] if sync_bullet_choices(text) else None),
+            inputs=[edit_analyst],
+            outputs=[analyst_bullet_radio]
         )
 
     demo.launch(theme=gr.themes.Soft())
