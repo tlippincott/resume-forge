@@ -156,3 +156,107 @@ def bullets_to_display_text(bullets: List[Dict[str, Any]]) -> str:
     """
     texts = [b.get("text", "") if isinstance(b, dict) else b for b in bullets]
     return "\n".join(text.strip() for text in texts if text.strip())
+
+
+# ===== PHASE 3A: CANONICAL STATE FUNCTIONS =====
+
+def create_canonical_bullets(
+    spins_list: List[Dict[str, Any]],
+    programmer_list: List[Dict[str, Any]],
+    analyst_list: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Create canonical bullet representation with section tags.
+
+    Consolidates 3 separate lists into single source of truth with "section" field.
+    This is the foundation for Phase 3A state unification.
+
+    Args:
+        spins_list: SPINS section bullets with intelligence
+        programmer_list: Programmer section bullets with intelligence
+        analyst_list: Analyst section bullets with intelligence
+
+    Returns:
+        Single list with all bullets, each tagged with "section" field
+
+    Example:
+        >>> spins = [{"text": "A", "bullet_id": "1"}]
+        >>> programmer = [{"text": "B", "bullet_id": "2"}]
+        >>> analyst = [{"text": "C", "bullet_id": "3"}]
+        >>> canonical = create_canonical_bullets(spins, programmer, analyst)
+        >>> len(canonical)
+        3
+        >>> canonical[0]["section"]
+        'spins'
+    """
+    canonical = []
+
+    # Add section tag to each bullet
+    for bullet in spins_list:
+        bullet_copy = bullet.copy()
+        bullet_copy["section"] = "spins"
+        canonical.append(bullet_copy)
+
+    for bullet in programmer_list:
+        bullet_copy = bullet.copy()
+        bullet_copy["section"] = "programmer"
+        canonical.append(bullet_copy)
+
+    for bullet in analyst_list:
+        bullet_copy = bullet.copy()
+        bullet_copy["section"] = "analyst"
+        canonical.append(bullet_copy)
+
+    return canonical
+
+
+def get_used_bullet_ids(canonical_bullets: List[Dict[str, Any]]) -> set:
+    """
+    Derive used bullet IDs from canonical state (no separate tracking needed).
+
+    Args:
+        canonical_bullets: Canonical bullet list with all sections
+
+    Returns:
+        Set of bullet IDs currently in use
+
+    Example:
+        >>> bullets = [
+        ...     {"bullet_id": "1", "section": "spins"},
+        ...     {"bullet_id": "2", "section": "programmer"}
+        ... ]
+        >>> get_used_bullet_ids(bullets)
+        {'1', '2'}
+    """
+    return {b.get("bullet_id") for b in canonical_bullets if b.get("bullet_id")}
+
+
+def split_canonical_bullets(
+    canonical_bullets: List[Dict[str, Any]]
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Split canonical state back into section-specific lists (for backward compatibility).
+
+    This allows gradual migration from separate states to canonical state.
+    During transition, handlers can work with either representation.
+
+    Args:
+        canonical_bullets: Canonical bullet list with "section" field
+
+    Returns:
+        Tuple of (spins_list, programmer_list, analyst_list)
+
+    Example:
+        >>> canonical = [
+        ...     {"text": "A", "section": "spins"},
+        ...     {"text": "B", "section": "programmer"}
+        ... ]
+        >>> spins, prog, analyst = split_canonical_bullets(canonical)
+        >>> len(spins), len(prog), len(analyst)
+        (1, 1, 0)
+    """
+    spins = get_section_bullets(canonical_bullets, "spins")
+    programmer = get_section_bullets(canonical_bullets, "programmer")
+    analyst = get_section_bullets(canonical_bullets, "analyst")
+
+    return spins, programmer, analyst
