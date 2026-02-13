@@ -1,3 +1,4 @@
+import html
 from app.openai_client import call_openai_json
 
 def cover_letter_prompt(summary, bullets, job_title, job_description, company_name,
@@ -331,7 +332,9 @@ def generate_cover_letter(resume_data, job_title, job_description, company_name,
             company_interest,
             gap_explanation
       ),
-      temperature=0.7
+      temperature=0.7,
+      timeout=90
    )
 
-   return "<p>" + "</p><p>".join(result["cover_letter_body"]) + "</p>"
+   escaped_paragraphs = [html.escape(p) for p in result["cover_letter_body"]]
+   return "<p>" + "</p><p>".join(escaped_paragraphs) + "</p>"

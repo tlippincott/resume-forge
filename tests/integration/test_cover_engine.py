@@ -267,3 +267,143 @@ class TestGenerateCoverLetter:
 
         # Paragraphs should be joined with </p><p>
         assert "</p><p>" in result
+
+
+class TestCoverLetterXSSPrevention:
+    """Tests for XSS attack prevention in cover letter generation."""
+
+    @pytest.fixture
+    def resume_data(self):
+        """Sample resume data structure."""
+        return {
+            "summary": "Test summary",
+            "spins": ["Bullet 1"],
+            "programmer": ["Bullet 2"],
+            "analyst": ["Bullet 3"]
+        }
+
+    def test_escapes_script_tags_in_paragraphs(self, mocker, resume_data):
+        """Should escape <script> tags in cover letter paragraphs."""
+        mock_call = mocker.patch("app.cover_engine.call_openai_json")
+        mock_call.return_value = {
+            "cover_letter_body": [
+                "<script>alert('xss')</script>This is a paragraph"
+            ]
+        }
+
+        result = generate_cover_letter(
+            resume_data,
+            "Software Engineer",
+            "Job description",
+            "Company",
+            "Info",
+            False
+        )
+
+        # Script tag should be escaped
+        assert "<script>alert" not in result
+        assert "&lt;script&gt;alert" in result
+
+    def test_escapes_html_tags_in_paragraphs(self, mocker, resume_data):
+        """Should escape HTML tags in cover letter paragraphs."""
+        mock_call = mocker.patch("app.cover_engine.call_openai_json")
+        mock_call.return_value = {
+            "cover_letter_body": [
+                "<b>Bold text</b> and <i>italic text</i>"
+            ]
+        }
+
+        result = generate_cover_letter(
+            resume_data,
+            "Software Engineer",
+            "Job description",
+            "Company",
+            "Info",
+            False
+        )
+
+        # Tags should be escaped (only <p> tags should be real)
+        assert "&lt;b&gt;" in result
+        assert "&lt;i&gt;" in result
+        # Should not have raw <b> or <i> tags
+        assert "<b>" not in result
+        assert "<i>" not in result
+
+    def test_escapes_event_handlers_in_paragraphs(self, mocker, resume_data):
+        """Should escape event handlers in cover letter paragraphs."""
+        mock_call = mocker.patch("app.cover_engine.call_openai_json")
+        mock_call.return_value = {
+            "cover_letter_body": [
+                "<img src=x onerror='alert(1)'>"
+            ]
+        }
+
+        result = generate_cover_letter(
+            resume_data,
+            "Software Engineer",
+            "Job description",
+            "Company",
+            "Info",
+            False
+        )
+
+        # Tags should be escaped, making the attack vector harmless
+        assert "&lt;img" in result
+        assert "<img src=x" not in result
+
+    def test_preserves_normal_text_in_paragraphs(self, mocker, resume_data):
+        """Should preserve normal text without corruption."""
+        normal_paragraphs = [
+            "I am excited about this opportunity at Your Company.",
+            "My experience includes Python development & API design.",
+            "Looking forward to discussing this role further."
+        ]
+        mock_call = mocker.patch("app.cover_engine.call_openai_json")
+        mock_call.return_value = {
+            "cover_letter_body": normal_paragraphs
+        }
+
+        result = generate_cover_letter(
+            resume_data,
+            "Software Engineer",
+            "Job description",
+            "Company",
+            "Info",
+            False
+        )
+
+        # Normal text should be present
+        for paragraph in normal_paragraphs:
+            # Text should be in result (& may be escaped to &amp;)
+            assert paragraph.replace("&", "&amp;") in result or paragraph in result
+
+        # Should still have <p> tags (not escaped)
+        assert result.startswith("<p>")
+        assert result.endswith("</p>")
+
+    def test_handles_multiple_xss_vectors(self, mocker, resume_data):
+        """Should handle multiple XSS attack vectors across paragraphs."""
+        mock_call = mocker.patch("app.cover_engine.call_openai_json")
+        mock_call.return_value = {
+            "cover_letter_body": [
+                "<script>alert('xss')</script>",
+                "<img src=x onerror='alert(1)'>",
+                "';alert(String.fromCharCode(88,83,83))//"
+            ]
+        }
+
+        result = generate_cover_letter(
+            resume_data,
+            "Software Engineer",
+            "Job description",
+            "Company",
+            "Info",
+            False
+        )
+
+        # No executable scripts - tags should be escaped
+        assert "<script>alert" not in result
+        assert "<img src=x" not in result
+        # Should have escaped versions
+        assert "&lt;script&gt;" in result
+        assert "&lt;img" in result

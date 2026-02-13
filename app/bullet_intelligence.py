@@ -32,7 +32,7 @@ def analyze_job_description(job_description: str) -> Dict[str, Any]:
         }
     """
     prompt = _build_jd_analysis_prompt(job_description)
-    result = call_openai_json(prompt, temperature=0.0)
+    result = call_openai_json(prompt, temperature=0.0, timeout=60)
 
     # Normalize to lowercase for matching
     return {
@@ -89,7 +89,7 @@ def analyze_bullets(bullets: List[str]) -> List[Dict[str, Any]]:
         }
     """
     prompt = _build_bullet_analysis_prompt(bullets)
-    result = call_openai_json(prompt, temperature=0.0)
+    result = call_openai_json(prompt, temperature=0.0, timeout=90)
 
     # Add bullet IDs and normalize keywords
     import uuid

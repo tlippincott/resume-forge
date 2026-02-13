@@ -159,7 +159,8 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
     """
     response = call_openai_json(
         distribution_prompt(bullets),
-        temperature=0.0  # Deterministic classification
+        temperature=0.0,  # Deterministic classification
+        timeout=60
     )
 
     # Validate response structure

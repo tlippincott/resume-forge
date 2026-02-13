@@ -1,5 +1,6 @@
 """Helper functions for resume editing, preview, and PDF generation."""
 
+import html
 import re
 from pathlib import Path
 from datetime import datetime
@@ -12,7 +13,7 @@ def build_html_bullets(bullet_list: list[str]) -> str:
         return ""
 
     # Filter empties, wrap in <li> tags, join with newlines
-    bullets = [f"<li>{bullet.strip()}</li>" for bullet in bullet_list if bullet.strip()]
+    bullets = [f"<li>{html.escape(bullet.strip())}</li>" for bullet in bullet_list if bullet.strip()]
     return "\n".join(bullets)
 
 
@@ -57,7 +58,7 @@ def load_resume_html(summary: str, spins_html: str, programmer_html: str, analys
         )
 
     # Replace placeholders
-    html_content = html_content.replace("{summary}", summary or "")
+    html_content = html_content.replace("{summary}", html.escape(summary or ""))
     html_content = html_content.replace("{spins}", spins_html or "")
     html_content = html_content.replace("{programmer}", programmer_html or "")
     html_content = html_content.replace("{analyst}", analyst_html or "")

@@ -6,7 +6,7 @@ from app.distribution_engine import classify_bullets, rebalance
 from app.openai_client import call_openai_json
 from app.prompts import bullet_selection_prompt, rewrite_prompt
 from app.bullet_intelligence import (
-    analyze_job_description,
+    get_cached_jd_analysis,
     analyze_bullets,
     score_bullets_against_jd
 )
@@ -24,7 +24,8 @@ def generate_resume(job_description, company_name,
 
     # 1. Score all bullets
     scored = call_openai_json(
-        bullet_selection_prompt(job_description, all_bullets)
+        bullet_selection_prompt(job_description, all_bullets),
+        timeout=90
     )["scored_bullets"]
 
     # 2. Sort by score (deterministic)
@@ -44,14 +45,15 @@ def generate_resume(job_description, company_name,
             job_change,
             role  # Pass role for strategy selection
         ),
-        temperature=0.7
+        temperature=0.7,
+        timeout=120
     )
     rewritten_bullets = rewritten["rewritten_bullets"]
 
     # === NEW: INTELLIGENT ANALYSIS ===
 
     # Step 1: Analyze job description (1 LLM call)
-    jd_analysis = analyze_job_description(job_description)
+    jd_analysis = get_cached_jd_analysis(job_description)
 
     # Step 2: Analyze all rewritten bullets (1 LLM call for batch)
     analyzed_bullets = analyze_bullets(rewritten_bullets)
@@ -63,7 +65,7 @@ def generate_resume(job_description, company_name,
     assignments = classify_bullets(rewritten_bullets)
 
     # Add classification to analyzed bullets
-    assignment_map = {a["bullet"]: a["section"] for a in assignments["assignments"]}
+    assignment_map = {a["bullet"]: a["section"] for a in assignments}
     for bullet_data in analyzed_bullets:
         bullet_data["section"] = assignment_map.get(bullet_data["text"], "analyst")
 

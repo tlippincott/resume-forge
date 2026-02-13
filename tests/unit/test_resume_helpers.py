@@ -201,3 +201,109 @@ class TestGeneratePdfFile:
 
         # Clean up
         path.unlink()
+
+
+class TestXSSPrevention:
+    """Tests for XSS attack prevention through HTML escaping."""
+
+    def test_build_html_bullets_escapes_script_tags(self):
+        """Should escape <script> tags in bullets."""
+        bullets = ["<script>alert('xss')</script>"]
+        result = build_html_bullets(bullets)
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+        # Quotes are also escaped
+        assert "alert" in result and ("&#x27;" in result or "&quot;" in result)
+
+    def test_build_html_bullets_escapes_html_tags(self):
+        """Should escape HTML tags like <b>, <i>, <img>."""
+        bullets = [
+            "<b>bold text</b>",
+            "<i>italic text</i>",
+            "<img src='x' />"
+        ]
+        result = build_html_bullets(bullets)
+        assert "<b>" not in result
+        assert "<i>" not in result
+        assert "<img" not in result
+        assert "&lt;b&gt;" in result
+        assert "&lt;i&gt;" in result
+        assert "&lt;img" in result
+
+    def test_build_html_bullets_escapes_event_handlers(self):
+        """Should escape event handlers like onclick, onerror."""
+        bullets = [
+            "<img src=x onerror='alert(1)'>",
+            "<div onclick='alert(1)'>click</div>"
+        ]
+        result = build_html_bullets(bullets)
+        # Tags should be escaped
+        assert "&lt;img" in result
+        assert "&lt;div" in result
+        # The whole attack vector should be rendered harmless
+        assert "<img src=" not in result
+        assert "<div onclick=" not in result
+
+    def test_build_html_bullets_escapes_attribute_injection(self):
+        """Should escape quote characters to prevent attribute injection."""
+        bullets = ['" onclick="alert(1)"']
+        result = build_html_bullets(bullets)
+        # Quote should be escaped
+        assert '&quot;' in result or '&#x27;' in result
+        # Should not have executable onclick
+        assert 'onclick="alert' not in result
+
+    def test_build_html_bullets_escapes_ampersands(self):
+        """Should escape ampersands."""
+        bullets = ["Research & Development"]
+        result = build_html_bullets(bullets)
+        assert "&amp;" in result or "Research &amp; Development" in result
+
+    def test_load_resume_html_escapes_summary(self):
+        """Should escape <script> tags in summary."""
+        summary = "<script>alert('xss')</script>"
+        result = load_resume_html(summary, "", "", "")
+        # Script tag should be escaped in the output
+        assert "<script>" not in result or result.count("<script>") == result.count("resume.js")
+        # The escaped version should be present
+        assert "&lt;script&gt;alert" in result
+
+    def test_load_resume_html_escapes_summary_html_tags(self):
+        """Should escape HTML tags in summary."""
+        summary = "<b>Bold Summary</b>"
+        result = load_resume_html(summary, "", "", "")
+        # The literal <b> from summary should be escaped
+        # (though template may have its own <b> tags)
+        assert "&lt;b&gt;Bold Summary&lt;/b&gt;" in result
+
+    def test_normal_text_preserved(self):
+        """Should preserve normal text without corruption."""
+        bullets = [
+            "Developed Python APIs",
+            "Managed 5TB+ databases",
+            "Reduced downtime by 40%"
+        ]
+        result = build_html_bullets(bullets)
+        # Normal text should be present
+        assert "Developed Python APIs" in result
+        assert "5TB+" in result
+        assert "40%" in result
+        # Should still have <li> tags (not escaped)
+        assert result.startswith("<li>")
+        assert "</li>" in result
+
+    def test_xss_payload_combinations(self):
+        """Should handle complex XSS attack combinations."""
+        bullets = [
+            "<img src=x onerror=\"alert('XSS')\">",
+            "';alert(String.fromCharCode(88,83,83))//",
+            "<iframe src='javascript:alert(1)'>",
+            "<<SCRIPT>alert('XSS');//<</SCRIPT>"
+        ]
+        result = build_html_bullets(bullets)
+
+        # No executable script elements
+        assert "<img src=x onerror=" not in result
+        assert "javascript:alert" not in result or "&lt;" in result
+        # Tags should be escaped
+        assert "&lt;" in result or all(bullet not in result for bullet in bullets)
