@@ -1,4 +1,14 @@
 def bullet_selection_prompt(job_description, bullets):
+    """
+    Build LLM prompt for scoring resume bullets against job description.
+
+    Args:
+        job_description: Target job description text
+        bullets: List of bullet strings to score
+
+    Returns:
+        OpenAI chat messages list with scoring instructions
+    """
     return [{
         "role": "user",
         "content": f"""
@@ -260,6 +270,20 @@ def rewrite_prompt(job_description, company_name, company_info,
     )
 
 def distribution_prompt(bullets):
+    """
+    Build LLM prompt for classifying bullets into resume sections.
+
+    Classifies bullets into three sections:
+    - spins: End-user support, customer interaction, collaboration
+    - programmer: Technical implementation, tooling, automation
+    - analyst: Analysis, documentation, troubleshooting methodology
+
+    Args:
+        bullets: List of bullet strings to classify
+
+    Returns:
+        OpenAI chat messages list with classification instructions
+    """
     return [{
         "role": "user",
         "content": f"""

@@ -112,7 +112,8 @@ def generate_cover_letter_adapter(
     company_info: str,
     job_change: bool,
     company_interest: Dict[str, str] = None,
-    gap_explanation: str = None
+    gap_explanation: str = None,
+    jd_analysis: Dict[str, Any] = None
 ) -> Result[str]:
     """
     Adapter for generate_cover_letter() - translates exceptions to Result types.
@@ -126,6 +127,7 @@ def generate_cover_letter_adapter(
         job_change: Boolean indicating if this is a career change
         company_interest: Optional dict with hook, alignment, credibility_anchor
         gap_explanation: Optional employment gap explanation text
+        jd_analysis: Optional pre-analyzed JD intelligence (Phase 1A optimization)
 
     Returns:
         Success[str] containing HTML cover letter, or Failure with error message
@@ -140,7 +142,8 @@ def generate_cover_letter_adapter(
             company_info,
             job_change,
             company_interest,
-            gap_explanation
+            gap_explanation,
+            jd_analysis
         )
         logger.info(f"Adapter: Cover letter generation successful")
         return success(result)

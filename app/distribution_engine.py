@@ -18,7 +18,9 @@ Configuration:
 - Overflow section (analyst): no limits, receives overflow
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
+from app.types import BulletAssignment
+from app.config import config
 from app.openai_client import call_openai_json
 from app.prompts import distribution_prompt
 from app.exceptions import ValidationError, DataProcessingError
@@ -27,27 +29,37 @@ from app.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-# Configuration: Single Source of Truth
-SECTION_CONFIG = {
-    "spins": {
-        "min_bullets": 10,
-        "max_bullets": 12,
-        "priority": "primary",
-        "description": "End-user support, customer interaction, service delivery"
-    },
-    "programmer": {
-        "min_bullets": 10,
-        "max_bullets": 12,
-        "priority": "primary",
-        "description": "Technical implementation, automation, scripting"
-    },
-    "analyst": {
-        "min_bullets": 0,
-        "max_bullets": None,
-        "priority": "overflow",
-        "description": "Troubleshooting, root cause analysis, documentation"
+def _build_section_config() -> Dict:
+    """
+    Build section configuration from app config.
+
+    This allows section limits to be configured via environment variables
+    while maintaining the same structure expected by the rest of the module.
+    """
+    return {
+        "spins": {
+            "min_bullets": config.business.spins_min,
+            "max_bullets": config.business.spins_max,
+            "priority": "primary",
+            "description": "End-user support, customer interaction, service delivery"
+        },
+        "programmer": {
+            "min_bullets": config.business.programmer_min,
+            "max_bullets": config.business.programmer_max,
+            "priority": "primary",
+            "description": "Technical implementation, automation, scripting"
+        },
+        "analyst": {
+            "min_bullets": config.business.analyst_min,
+            "max_bullets": config.business.analyst_max,
+            "priority": "overflow",
+            "description": "Troubleshooting, root cause analysis, documentation"
+        }
     }
-}
+
+
+# Configuration: Single Source of Truth (built from config)
+SECTION_CONFIG = _build_section_config()
 
 # Derived constants (computed from config)
 PRIMARY_SECTIONS = [name for name, config in SECTION_CONFIG.items()
@@ -57,7 +69,7 @@ OVERFLOW_SECTION = next(name for name, config in SECTION_CONFIG.items()
 VALID_SECTIONS = set(SECTION_CONFIG.keys())
 
 
-def validate_assignments(assignments: List[Dict[str, Any]]) -> None:
+def validate_assignments(assignments: List[BulletAssignment]) -> None:
     """
     Validate assignment structure and content.
 
@@ -133,7 +145,7 @@ def validate_section_distribution(sections: Dict[str, List[str]]) -> None:
             )
 
 
-def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
+def classify_bullets(bullets: List[str]) -> List[BulletAssignment]:
     """
     Classify resume bullets into presentation sections using LLM.
 
@@ -145,9 +157,7 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
         bullets: List of resume bullet strings to classify
 
     Returns:
-        List of assignment dicts with keys:
-        - "bullet" (str): The resume bullet text
-        - "section" (str): One of "spins", "programmer", "analyst"
+        List of BulletAssignment TypedDicts with bullet text and section
 
     Raises:
         DataProcessingError: If LLM response is invalid or malformed
@@ -187,7 +197,7 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
     return assignments
 
 
-def rebalance(assignments: List[Dict[str, str]]) -> Dict[str, List[str]]:
+def rebalance(assignments: List[BulletAssignment]) -> Dict[str, List[str]]:
     """
     Enforce deterministic section size limits on classified bullets.
 

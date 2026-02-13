@@ -1,4 +1,5 @@
 import html
+from app.config import config
 from app.openai_client import call_openai_json
 from app.exceptions import DataProcessingError
 from app.logging_config import get_logger
@@ -7,7 +8,7 @@ logger = get_logger(__name__)
 
 def cover_letter_prompt(summary, bullets, job_title, job_description, company_name,
                         company_info, job_change, company_interest=None,
-                        gap_explanation=None):
+                        gap_explanation=None, jd_analysis=None):
    # Format company_interest for better readability
    company_interest_text = "Not provided"
    if company_interest:
@@ -16,6 +17,29 @@ def cover_letter_prompt(summary, bullets, job_title, job_description, company_na
          f"  - Alignment: {company_interest.get('alignment', '')}",
          f"  - Credibility Anchor: {company_interest.get('credibility_anchor', '')}"
       ])
+
+   # Format JD analysis if provided (Phase 1A: reuse pre-analyzed JD intelligence)
+   jd_intelligence_text = ""
+   if jd_analysis:
+      jd_intelligence_text = f"""
+=== JOB DESCRIPTION INTELLIGENCE (PRE-ANALYZED) ===
+
+Use this pre-extracted intelligence from the job description instead of re-analyzing the raw JD text:
+
+REQUIRED SKILLS:
+{', '.join(jd_analysis.get('required_skills', []))}
+
+PREFERRED SKILLS:
+{', '.join(jd_analysis.get('preferred_skills', []))}
+
+KEY CATEGORIES:
+{', '.join(jd_analysis.get('job_categories', []))}
+
+ALL KEYWORDS:
+{', '.join(jd_analysis.get('all_keywords', []))}
+
+When writing the cover letter, prioritize alignment with REQUIRED SKILLS and reference PREFERRED SKILLS where your experience overlaps.
+"""
 
    # Determine which case to use
    has_company_interest = bool(company_interest)
@@ -192,7 +216,7 @@ JOB TITLE:
 
 JOB DESCRIPTION:
 {job_description}
-
+{jd_intelligence_text}
 COMPANY NAME:
 {company_name}
 
@@ -324,7 +348,7 @@ Before returning your response, verify:
 
 def generate_cover_letter(resume_data, job_title, job_description, company_name,
                            company_info, job_change, company_interest=None,
-                           gap_explanation=None):
+                           gap_explanation=None, jd_analysis=None):
    """
    Generate a tailored cover letter based on resume data and job description.
 
@@ -337,6 +361,7 @@ def generate_cover_letter(resume_data, job_title, job_description, company_name,
        job_change: Boolean indicating if this is a career change
        company_interest: Optional dict with hook, alignment, credibility_anchor
        gap_explanation: Optional employment gap explanation text
+       jd_analysis: Optional pre-analyzed JD intelligence (Phase 1A optimization)
 
    Returns:
        HTML-formatted cover letter body
@@ -345,6 +370,12 @@ def generate_cover_letter(resume_data, job_title, job_description, company_name,
        DataProcessingError: If cover letter generation fails
    """
    logger.info(f"Generating cover letter for {job_title} at {company_name}")
+
+   # Phase 1A: Log whether we're using pre-analyzed JD intelligence
+   if jd_analysis:
+      logger.info("Using pre-analyzed JD intelligence (Phase 1A optimization - no redundant analysis)")
+   else:
+      logger.info("No pre-analyzed JD provided - will analyze raw JD text")
 
    bullets = resume_data["spins"] + resume_data["programmer"] + resume_data["analyst"]
    logger.debug(f"Using {len(bullets)} bullets from resume")
@@ -356,10 +387,11 @@ def generate_cover_letter(resume_data, job_title, job_description, company_name,
                job_title, job_description,
                company_name, company_info, job_change,
                company_interest,
-               gap_explanation
+               gap_explanation,
+               jd_analysis
          ),
-         temperature=0.7,
-         timeout=90
+         temperature=config.llm.temperature_creative,
+         timeout=config.llm.cover_letter_timeout
       )
    except Exception as e:
       logger.error(f"Failed to generate cover letter: {e}")

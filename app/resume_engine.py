@@ -2,6 +2,8 @@ import json
 import os
 import random
 
+from app.types import ResumeData
+from app.config import config
 from app.distribution_engine import classify_bullets, rebalance
 from app.openai_client import call_openai_json
 from app.prompts import bullet_selection_prompt, rewrite_prompt
@@ -17,7 +19,7 @@ logger = get_logger(__name__)
 
 
 def generate_resume(job_description, company_name,
-                    company_info, bullet_file, job_change,):
+                    company_info, bullet_file, job_change) -> ResumeData:
     """
     Generate a tailored resume based on job description and bullet library.
 
@@ -29,7 +31,8 @@ def generate_resume(job_description, company_name,
         job_change: Boolean indicating if this is a career change
 
     Returns:
-        Dict containing summary, section bullets, and intelligence metadata
+        ResumeData TypedDict containing summary, section bullets (spins,
+        programmer, analyst), and intelligence metadata
 
     Raises:
         FileOperationError: If bullet file is missing or invalid
@@ -69,7 +72,7 @@ def generate_resume(job_description, company_name,
     try:
         scored = call_openai_json(
             bullet_selection_prompt(job_description, all_bullets),
-            timeout=90
+            timeout=config.llm.scoring_timeout
         )["scored_bullets"]
         logger.info(f"Scored {len(scored)} bullets")
     except KeyError as e:
@@ -79,8 +82,8 @@ def generate_resume(job_description, company_name,
     # 2. Sort by score (deterministic)
     sorted_bullets = sorted(scored, key=lambda x: x["score"], reverse=True)
 
-    # 3. Select top 38-42 (increased from 28-32 for larger replacement pool)
-    count = random.randint(38, 42)
+    # 3. Select top bullets (range from config)
+    count = random.randint(config.business.bullet_selection_min, config.business.bullet_selection_max)
     selected = [item["bullet"] for item in sorted_bullets[:count]]
 
     # 4. Rewrite selected bullets for clarity and alignment
@@ -95,8 +98,8 @@ def generate_resume(job_description, company_name,
                 job_change,
                 role  # Pass role for strategy selection
             ),
-            temperature=0.7,
-            timeout=120
+            temperature=config.llm.temperature_creative,
+            timeout=config.llm.rewriting_timeout
         )
         rewritten_bullets = rewritten["rewritten_bullets"]
         logger.info(f"Rewrote {len(rewritten_bullets)} bullets")

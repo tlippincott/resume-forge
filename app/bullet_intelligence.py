@@ -4,35 +4,24 @@ Extracts keywords, categories, impact metrics, and computes JD alignment scores.
 """
 
 import re
-from typing import List, Dict, Set, Any
+from typing import List, Dict, Set
+from app.types import JDAnalysis, AnalyzedBullet, Suggestion
+from app.config import config
 from app.openai_client import call_openai_json
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-# ===== WEIGHT CONSTANTS =====
-REQUIRED_SKILL_WEIGHT = 3
-PREFERRED_SKILL_WEIGHT = 1
-IMPACT_BONUS = 2
-CATEGORY_SIMILARITY_WEIGHT = 2
-SKILL_OVERLAP_WEIGHT = 1
-SKILL_COVERAGE_PENALTY = 0.5
-
-
 # ===== JOB DESCRIPTION ANALYSIS =====
 
-def analyze_job_description(job_description: str) -> Dict[str, Any]:
+def analyze_job_description(job_description: str) -> JDAnalysis:
     """
     Extract intelligence from job description using LLM.
 
     Returns:
-        {
-            "required_skills": ["React", "Node.js", ...],
-            "preferred_skills": ["AWS", "Docker", ...],
-            "all_keywords": ["React", "Node.js", "AWS", ...],
-            "job_categories": ["frontend", "backend", ...]
-        }
+        JDAnalysis TypedDict with required_skills, preferred_skills,
+        all_keywords, and job_categories
     """
     logger.debug("Analyzing job description for keywords and skills")
     prompt = _build_jd_analysis_prompt(job_description)
@@ -79,7 +68,7 @@ Return format:
 
 # ===== BULLET ANALYSIS =====
 
-def analyze_bullets(bullets: List[str]) -> List[Dict[str, Any]]:
+def analyze_bullets(bullets: List[str]) -> List[AnalyzedBullet]:
     """
     Extract intelligence from all rewritten bullets using LLM batch call.
 
@@ -87,14 +76,8 @@ def analyze_bullets(bullets: List[str]) -> List[Dict[str, Any]]:
         bullets: List of rewritten bullet texts
 
     Returns:
-        List of dicts with structure:
-        {
-            "bullet_id": "uuid",
-            "text": "bullet text",
-            "keywords": ["React", "Node.js"],
-            "category": "frontend",
-            "has_impact": True
-        }
+        List of AnalyzedBullet TypedDicts with bullet_id, text, keywords,
+        category, and has_impact fields
     """
     logger.debug(f"Analyzing {len(bullets)} bullets for keywords and categories")
     prompt = _build_bullet_analysis_prompt(bullets)
@@ -151,9 +134,9 @@ Note: Return exactly {len(bullets)} bullet analyses in the same order."""
 # ===== SCORING =====
 
 def score_bullets_against_jd(
-    analyzed_bullets: List[Dict[str, Any]],
-    jd_analysis: Dict[str, Any]
-) -> List[Dict[str, Any]]:
+    analyzed_bullets: List[AnalyzedBullet],
+    jd_analysis: JDAnalysis
+) -> List[AnalyzedBullet]:
     """
     Score each bullet based on JD alignment.
 
@@ -167,7 +150,8 @@ def score_bullets_against_jd(
         jd_analysis: Output from analyze_job_description()
 
     Returns:
-        Same bullet dicts with added "jd_score" field
+        Same AnalyzedBullet dicts with added jd_score, required_matches,
+        and preferred_matches fields
     """
     required = set(jd_analysis["required_skills"])
     preferred = set(jd_analysis["preferred_skills"])
@@ -178,15 +162,15 @@ def score_bullets_against_jd(
 
         # Match required skills
         required_matches = bullet_keywords & required
-        score += len(required_matches) * REQUIRED_SKILL_WEIGHT
+        score += len(required_matches) * config.scoring.required_skill_weight
 
         # Match preferred skills
         preferred_matches = bullet_keywords & preferred
-        score += len(preferred_matches) * PREFERRED_SKILL_WEIGHT
+        score += len(preferred_matches) * config.scoring.preferred_skill_weight
 
         # Impact bonus
         if bullet["has_impact"]:
-            score += IMPACT_BONUS
+            score += config.scoring.impact_bonus
 
         bullet["jd_score"] = score
         bullet["required_matches"] = list(required_matches)
@@ -198,12 +182,12 @@ def score_bullets_against_jd(
 # ===== REPLACEMENT SUGGESTIONS =====
 
 def suggest_replacements(
-    removed_bullet: Dict[str, Any],
-    all_bullets: List[Dict[str, Any]],
+    removed_bullet: AnalyzedBullet,
+    all_bullets: List[AnalyzedBullet],
     active_bullet_ids: Set[str],
-    active_bullets: List[Dict[str, Any]],
-    jd_analysis: Dict[str, Any]
-) -> List[Dict[str, Any]]:
+    active_bullets: List[AnalyzedBullet],
+    jd_analysis: JDAnalysis
+) -> List[Suggestion]:
     """
     Suggest top 5 replacement bullets based on:
     - Category similarity
@@ -212,19 +196,14 @@ def suggest_replacements(
     - Skills coverage penalty (avoid overloading same skills)
 
     Args:
-        removed_bullet: The bullet being replaced
+        removed_bullet: The bullet being replaced (AnalyzedBullet)
         all_bullets: Full pool of analyzed bullets
         active_bullet_ids: Set of bullet IDs currently in use
         active_bullets: List of bullets currently active in target section
         jd_analysis: Job description analysis
 
     Returns:
-        Top 5 candidate dicts with:
-        {
-            "bullet": bullet_dict,
-            "score": final_score,
-            "explanation": "why this is a good choice"
-        }
+        Top 5 Suggestion TypedDicts with bullet, score, and explanation
     """
     logger.debug(f"Suggesting replacements for bullet in category '{removed_bullet.get('category')}', "
                  f"{len(all_bullets)} candidates available, {len(active_bullet_ids)} already in use")
@@ -237,7 +216,7 @@ def suggest_replacements(
 
         # Calculate category similarity
         category_similarity = (
-            CATEGORY_SIMILARITY_WEIGHT
+            config.scoring.category_similarity_weight
             if bullet["category"] == removed_bullet["category"]
             else 0
         )
@@ -245,7 +224,7 @@ def suggest_replacements(
         # Calculate skill overlap
         bullet_keywords = set(bullet["keywords"])
         removed_keywords = set(removed_bullet["keywords"])
-        skill_overlap = len(bullet_keywords & removed_keywords) * SKILL_OVERLAP_WEIGHT
+        skill_overlap = len(bullet_keywords & removed_keywords) * config.scoring.skill_overlap_weight
 
         # Calculate skills coverage penalty
         coverage_penalty = calculate_skill_coverage_penalty(bullet, active_bullets)
@@ -275,8 +254,8 @@ def suggest_replacements(
 
 
 def calculate_skill_coverage_penalty(
-    bullet: Dict[str, Any],
-    active_bullets: List[Dict[str, Any]]
+    bullet: AnalyzedBullet,
+    active_bullets: List[AnalyzedBullet]
 ) -> float:
     """
     Calculate penalty for skill redundancy.
@@ -300,14 +279,14 @@ def calculate_skill_coverage_penalty(
     bullet_keywords = set(bullet["keywords"])
     duplicated_skills = bullet_keywords & active_keywords
 
-    penalty = len(duplicated_skills) * SKILL_COVERAGE_PENALTY
+    penalty = len(duplicated_skills) * config.scoring.skill_coverage_penalty
     return penalty
 
 
 def generate_explanation(
-    bullet: Dict[str, Any],
-    removed_bullet: Dict[str, Any],
-    jd_analysis: Dict[str, Any]
+    bullet: AnalyzedBullet,
+    removed_bullet: AnalyzedBullet,
+    jd_analysis: JDAnalysis
 ) -> str:
     """
     Generate human-readable explanation for why this replacement is suggested.
@@ -346,7 +325,7 @@ def generate_explanation(
 # Store JD analysis to avoid redundant LLM calls
 _jd_analysis_cache = {}
 
-def get_cached_jd_analysis(job_description: str) -> Dict[str, Any]:
+def get_cached_jd_analysis(job_description: str) -> JDAnalysis:
     """Get or create cached JD analysis."""
     jd_hash = hash(job_description)
     if jd_hash not in _jd_analysis_cache:

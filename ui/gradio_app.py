@@ -170,8 +170,8 @@ def handle_pdf_generation(html_content):
 def handle_generate_cover_letter(summary_text, spins_text, programmer_text, analyst_text,
                                     jd, job_title, company, info, job_change,
                                     company_hook, personal_alignment, credibility_anchor,
-                                    include_gap, gap_text, progress=gr.Progress()):
-    """Generate cover letter from edited resume content and job details."""
+                                    include_gap, gap_text, jd_analysis, progress=gr.Progress()):
+    """Generate cover letter from edited resume content and job details (Phase 1A: uses pre-analyzed JD)."""
     progress(0.0, desc="Starting cover letter generation...")
 
     # Validate required inputs (UI-level validation)
@@ -224,7 +224,8 @@ def handle_generate_cover_letter(summary_text, spins_text, programmer_text, anal
     result_obj = generate_cover_letter_adapter(
         resume_data, job_title, jd, company, info, job_change,
         company_interest,
-        gap_explanation
+        gap_explanation,
+        jd_analysis  # Phase 1A: Pass pre-analyzed JD intelligence to eliminate redundant analysis
     )
 
     # Check for failure
@@ -1002,14 +1003,14 @@ def launch_app():
             outputs=[pdf_file_output, status_message]
         )
 
-        # Generate cover letter
+        # Generate cover letter (Phase 1A: now passes pre-analyzed JD)
         generate_cover_btn.click(
             fn=handle_generate_cover_letter,
             inputs=[
                 edit_summary, edit_spins, edit_programmer, edit_analyst,
                 jd, state_job_title, company, info, job_change,
                 company_hook, personal_alignment, credibility_anchor,
-                include_gap, gap_text
+                include_gap, gap_text, state_jd_analysis
             ],
             outputs=[cover_output, state_cover_letter_html, cover_generation_status]
         )

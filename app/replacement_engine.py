@@ -10,7 +10,8 @@ Architecture:
 - Pure business logic testable without UI
 """
 
-from typing import Dict, List, Any, Set, Tuple, Optional
+from typing import Dict, List, Set
+from app.types import AnalyzedBullet, JDAnalysis, Suggestion, EnrichedBullet
 from app.bullet_intelligence import suggest_replacements, generate_explanation
 from app.data_extractors import replace_bullet_in_list, extract_bullet_texts
 from app.text_processors import bullets_to_text
@@ -23,13 +24,13 @@ logger = get_logger(__name__)
 def get_replacement_suggestions(
     section_name: str,
     bullet_index: int,
-    spins_list: List[Dict[str, Any]],
-    programmer_list: List[Dict[str, Any]],
-    analyst_list: List[Dict[str, Any]],
-    analyzed_bullets: List[Dict[str, Any]],
-    jd_analysis: Dict[str, Any],
+    spins_list: List[EnrichedBullet],
+    programmer_list: List[EnrichedBullet],
+    analyst_list: List[EnrichedBullet],
+    analyzed_bullets: List[AnalyzedBullet],
+    jd_analysis: JDAnalysis,
     used_bullet_ids: Set[str]
-) -> Dict[str, Any]:
+) -> Dict[str, str | int | List[Suggestion] | EnrichedBullet | None]:
     """
     Generate intelligent replacement suggestions.
 
@@ -124,9 +125,9 @@ def get_replacement_suggestions(
 
 def get_suggestion_explanation(
     selected_bullet_id: str,
-    analyzed_bullets: List[Dict[str, Any]],
-    jd_analysis: Dict[str, Any]
-) -> Dict[str, Any]:
+    analyzed_bullets: List[AnalyzedBullet],
+    jd_analysis: JDAnalysis
+) -> Dict[str, str | bool | AnalyzedBullet]:
     """
     Get explanation for a selected suggestion.
 
@@ -171,12 +172,12 @@ def execute_replacement(
     target_section: str,
     target_index: int,
     selected_bullet_id: str,
-    spins_list: List[Dict[str, Any]],
-    programmer_list: List[Dict[str, Any]],
-    analyst_list: List[Dict[str, Any]],
-    analyzed_bullets: List[Dict[str, Any]],
+    spins_list: List[EnrichedBullet],
+    programmer_list: List[EnrichedBullet],
+    analyst_list: List[EnrichedBullet],
+    analyzed_bullets: List[AnalyzedBullet],
     used_bullet_ids: Set[str]
-) -> Dict[str, Any]:
+) -> Dict[str, bool | List[EnrichedBullet] | Set[str] | str | AnalyzedBullet | EnrichedBullet]:
     """
     Execute intelligent bullet replacement.
 
