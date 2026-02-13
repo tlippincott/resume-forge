@@ -34,8 +34,8 @@ class TestGradioWorkflow:
             sample_inputs["job_change"]
         )
 
-        # Should return 15 outputs (includes metadata states)
-        assert len(result) == 15
+        # Should return 16 outputs (includes metadata states + canonical bullets)
+        assert len(result) == 16
 
         # First output should be dict (JSON)
         assert isinstance(result[0], dict)
@@ -50,7 +50,7 @@ class TestGradioWorkflow:
         for i in range(1, 5):
             assert isinstance(result[i], str)
 
-        # State outputs (5-14)
+        # State outputs (5-15)
         assert isinstance(result[5], str)  # state_summary
         assert isinstance(result[6], list)  # state_spins (with IDs)
         assert isinstance(result[7], list)  # state_programmer (with IDs)
@@ -61,6 +61,7 @@ class TestGradioWorkflow:
         assert isinstance(result[12], dict)  # state_jd_analysis
         assert isinstance(result[13], set)  # state_used_bullet_ids
         assert isinstance(result[14], str)  # state_job_description
+        assert isinstance(result[15], list)  # state_canonical_bullets
 
     def test_generate_handler_with_missing_bullet_file(self):
         """Test that handle_generate handles missing bullet file."""
@@ -73,17 +74,24 @@ class TestGradioWorkflow:
             False
         )
 
-        # Should return 15 outputs with error (includes metadata states)
-        assert len(result) == 15
+        # Should return 16 outputs with error (includes metadata states + canonical bullets)
+        assert len(result) == 16
         assert "error" in result[0]
 
     def test_preview_update_handler(self):
         """Test that handle_preview_update generates HTML."""
+        # Create canonical bullets structure
+        canonical_bullets = [
+            {"text": "Bullet 1", "bullet_id": "1", "section": "spins"},
+            {"text": "Bullet 2", "bullet_id": "2", "section": "spins"},
+            {"text": "Prog bullet 1", "bullet_id": "3", "section": "programmer"},
+            {"text": "Prog bullet 2", "bullet_id": "4", "section": "programmer"},
+            {"text": "Analyst bullet 1", "bullet_id": "5", "section": "analyst"}
+        ]
+
         html = handle_preview_update(
             "Test summary",
-            "Bullet 1\nBullet 2",
-            "Prog bullet 1\nProg bullet 2",
-            "Analyst bullet 1"
+            canonical_bullets
         )
 
         # Should return HTML string
@@ -98,7 +106,7 @@ class TestGradioWorkflow:
 
     def test_preview_update_with_empty_inputs(self):
         """Test that handle_preview_update handles empty inputs."""
-        html = handle_preview_update("", "", "", "")
+        html = handle_preview_update("", [])
 
         # Should still return valid HTML
         assert isinstance(html, str)
@@ -126,11 +134,20 @@ class TestGradioWorkflow:
 
     def test_pdf_generation_with_full_template(self):
         """Test PDF generation with complete resume template."""
+        # Create canonical bullets structure
+        canonical_bullets = [
+            {"text": "Led development team", "bullet_id": "1", "section": "spins"},
+            {"text": "Implemented new features", "bullet_id": "2", "section": "spins"},
+            {"text": "Improved performance", "bullet_id": "3", "section": "spins"},
+            {"text": "Developed Python applications", "bullet_id": "4", "section": "programmer"},
+            {"text": "Created automated tests", "bullet_id": "5", "section": "programmer"},
+            {"text": "Analyzed data trends", "bullet_id": "6", "section": "analyst"},
+            {"text": "Created reports", "bullet_id": "7", "section": "analyst"}
+        ]
+
         html = handle_preview_update(
             "Professional summary with experience in software development",
-            "Led development team\nImplemented new features\nImproved performance",
-            "Developed Python applications\nCreated automated tests",
-            "Analyzed data trends\nCreated reports"
+            canonical_bullets
         )
 
         pdf_path, status = handle_pdf_generation(html)
@@ -168,6 +185,7 @@ class TestGradioWorkflow:
         edit_spins = gen_result[2]
         edit_programmer = gen_result[3]
         edit_analyst = gen_result[4]
+        canonical_bullets = gen_result[15]  # New canonical bullets state
 
         # Verify generation succeeded
         assert "error" not in json_output
@@ -176,12 +194,10 @@ class TestGradioWorkflow:
         # Step 2: Simulate editing (modify summary)
         edited_summary = edit_summary + " [EDITED]"
 
-        # Step 3: Update preview with edited content
+        # Step 3: Update preview with edited content (using canonical state)
         preview_html = handle_preview_update(
             edited_summary,
-            edit_spins,
-            edit_programmer,
-            edit_analyst
+            canonical_bullets
         )
 
         # Verify edited content appears in preview

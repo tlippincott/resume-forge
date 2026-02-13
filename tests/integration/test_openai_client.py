@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import MagicMock
 from openai import APIError, APITimeoutError, RateLimitError, APIConnectionError
 from app.openai_client import call_openai_json, DEFAULT_TIMEOUT, MAX_RETRIES
+from app.exceptions import LLMServiceError
 
 
 pytestmark = pytest.mark.integration
@@ -111,7 +112,7 @@ class TestCallOpenaiJson:
         assert mock_client.chat.completions.create.call_count == 2
 
     def test_raises_after_max_retries(self, mocker, sample_messages):
-        """Should raise RuntimeError after exhausting MAX_RETRIES."""
+        """Should raise LLMServiceError after exhausting MAX_RETRIES."""
         mock_message = MagicMock()
         mock_message.content = "not valid json"
 
@@ -127,21 +128,21 @@ class TestCallOpenaiJson:
         # Mock time.sleep to speed up test
         mocker.patch("app.openai_client.time.sleep")
 
-        with pytest.raises(RuntimeError, match="JSON parse failure"):
+        with pytest.raises(LLMServiceError, match="JSON parse failure"):
             call_openai_json(sample_messages)
 
         # Should have tried MAX_RETRIES + 1 times (4 total: initial + 3 retries)
         assert mock_client.chat.completions.create.call_count == MAX_RETRIES + 1
 
     def test_raises_on_empty_choices(self, mocker, sample_messages):
-        """Should raise RuntimeError when response has empty choices."""
+        """Should raise LLMServiceError when response has empty choices."""
         mock_response = MagicMock()
         mock_response.choices = []
 
         mock_client = mocker.patch("app.openai_client.client")
         mock_client.chat.completions.create.return_value = mock_response
 
-        with pytest.raises(RuntimeError, match="empty response"):
+        with pytest.raises(LLMServiceError, match="empty response"):
             call_openai_json(sample_messages)
 
     def test_handles_nested_json(self, mocker, mock_openai_response, sample_messages):
@@ -197,7 +198,7 @@ class TestCallOpenaiJson:
 
         mocker.patch("app.openai_client.time.sleep")
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(LLMServiceError):
             call_openai_json(sample_messages)
 
         # Should have tried MAX_RETRIES + 1 times (initial + retries)
@@ -305,7 +306,7 @@ class TestCallOpenaiJson:
         api_error = APIError(message="Invalid API key", request=mock_request, body=None)
         mock_client.chat.completions.create.side_effect = api_error
 
-        with pytest.raises(RuntimeError, match="OpenAI API error"):
+        with pytest.raises(LLMServiceError, match="OpenAI API error"):
             call_openai_json(sample_messages)
 
         # Should only try once (no retries for APIError)
@@ -355,7 +356,7 @@ class TestCallOpenaiJson:
 
         mock_sleep = mocker.patch("app.openai_client.time.sleep")
 
-        with pytest.raises(RuntimeError, match="Rate limit exceeded"):
+        with pytest.raises(LLMServiceError, match="Rate limit exceeded"):
             call_openai_json(sample_messages)
 
         # With MAX_RETRIES=3, we have 4 attempts total (initial + 3 retries)
@@ -378,7 +379,7 @@ class TestCallOpenaiJson:
         mock_client.chat.completions.create.side_effect = rate_limit_error
         mocker.patch("app.openai_client.time.sleep")
 
-        with pytest.raises(RuntimeError, match=r"Rate limit exceeded after \d+ attempts"):
+        with pytest.raises(LLMServiceError, match=r"Rate limit exceeded after \d+ attempts"):
             call_openai_json(sample_messages)
 
     def test_timeout_error_message_includes_timeout_value(self, mocker, sample_messages):
@@ -387,7 +388,7 @@ class TestCallOpenaiJson:
         mock_client.chat.completions.create.side_effect = APITimeoutError("Timeout")
         mocker.patch("app.openai_client.time.sleep")
 
-        with pytest.raises(RuntimeError, match=r"timeout: 90s"):
+        with pytest.raises(LLMServiceError, match=r"timeout: 90s"):
             call_openai_json(sample_messages, timeout=90)
 
     def test_connection_error_message_suggests_network_check(self, mocker, sample_messages):
@@ -400,5 +401,5 @@ class TestCallOpenaiJson:
         mock_client.chat.completions.create.side_effect = connection_error
         mocker.patch("app.openai_client.time.sleep")
 
-        with pytest.raises(RuntimeError, match="Check your internet connection"):
+        with pytest.raises(LLMServiceError, match="Check your internet connection"):
             call_openai_json(sample_messages)

@@ -9,6 +9,7 @@ Tests generate_resume pipeline with mocked OpenAI calls:
 import json
 import pytest
 from app.resume_engine import generate_resume
+from app.exceptions import FileOperationError
 
 
 pytestmark = pytest.mark.integration
@@ -98,8 +99,8 @@ class TestGenerateResume:
         return create_mocks
 
     def test_raises_on_missing_file(self, sample_job_description):
-        """Should raise ValueError when bullet file doesn't exist."""
-        with pytest.raises(ValueError, match="not found"):
+        """Should raise FileOperationError when bullet file doesn't exist."""
+        with pytest.raises(FileOperationError, match="not found"):
             generate_resume(
                 sample_job_description,
                 "TechCorp",

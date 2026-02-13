@@ -9,6 +9,7 @@ from ui.resume_helpers import (
     load_resume_html,
     generate_pdf_file
 )
+from app.exceptions import FileOperationError
 
 
 class TestBuildHtmlBullets:
@@ -145,7 +146,7 @@ class TestLoadResumeHtml:
             if template_path.exists():
                 template_path.rename(backup_path)
 
-            with pytest.raises(FileNotFoundError):
+            with pytest.raises(FileOperationError):
                 load_resume_html("test", "test", "test", "test")
         finally:
             # Restore template

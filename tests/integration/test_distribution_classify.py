@@ -8,6 +8,7 @@ Tests the LLM-dependent classification with mocked OpenAI calls:
 """
 import pytest
 from app.distribution_engine import classify_bullets
+from app.exceptions import ValidationError, DataProcessingError
 
 
 pytestmark = pytest.mark.integration
@@ -75,19 +76,19 @@ class TestClassifyBullets:
         assert call_args.kwargs.get("temperature") == 0.0
 
     def test_raises_on_non_dict_response(self, mocker, sample_bullets):
-        """Should raise ValueError when LLM returns non-dict."""
+        """Should raise DataProcessingError when LLM returns non-dict."""
         mock_call = mocker.patch("app.distribution_engine.call_openai_json")
         mock_call.return_value = ["not", "a", "dict"]
 
-        with pytest.raises(ValueError, match="Expected dict"):
+        with pytest.raises(DataProcessingError, match="Expected dict"):
             classify_bullets(sample_bullets)
 
     def test_raises_on_missing_assignments_key(self, mocker, sample_bullets):
-        """Should raise ValueError when response missing 'assignments' key."""
+        """Should raise DataProcessingError when response missing 'assignments' key."""
         mock_call = mocker.patch("app.distribution_engine.call_openai_json")
         mock_call.return_value = {"wrong_key": []}
 
-        with pytest.raises(ValueError, match="missing 'assignments' key"):
+        with pytest.raises(DataProcessingError, match="missing 'assignments' key"):
             classify_bullets(sample_bullets)
 
     def test_raises_on_invalid_assignment_structure(self, mocker, sample_bullets):
@@ -99,7 +100,7 @@ class TestClassifyBullets:
             ]
         }
 
-        with pytest.raises(ValueError, match="missing 'section' key"):
+        with pytest.raises(ValidationError, match="missing 'section' key"):
             classify_bullets(sample_bullets)
 
     def test_raises_on_invalid_section_name(self, mocker, sample_bullets):
@@ -111,7 +112,7 @@ class TestClassifyBullets:
             ]
         }
 
-        with pytest.raises(ValueError, match="invalid section"):
+        with pytest.raises(ValidationError, match="invalid section"):
             classify_bullets(sample_bullets)
 
     def test_raises_on_empty_assignments(self, mocker, sample_bullets):
@@ -119,7 +120,7 @@ class TestClassifyBullets:
         mock_call = mocker.patch("app.distribution_engine.call_openai_json")
         mock_call.return_value = {"assignments": []}
 
-        with pytest.raises(ValueError, match="empty"):
+        with pytest.raises(ValidationError, match="empty"):
             classify_bullets(sample_bullets)
 
     def test_validates_bullet_is_string(self, mocker, sample_bullets):
@@ -131,7 +132,7 @@ class TestClassifyBullets:
             ]
         }
 
-        with pytest.raises(TypeError, match="not string"):
+        with pytest.raises(ValidationError, match="not string"):
             classify_bullets(sample_bullets)
 
     def test_validates_bullet_not_empty(self, mocker, sample_bullets):
@@ -143,7 +144,7 @@ class TestClassifyBullets:
             ]
         }
 
-        with pytest.raises(ValueError, match="empty bullet"):
+        with pytest.raises(ValidationError, match="empty bullet"):
             classify_bullets(sample_bullets)
 
     def test_passes_bullets_to_prompt(self, mocker, sample_bullets, valid_classification_response):

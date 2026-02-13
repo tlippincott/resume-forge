@@ -16,6 +16,7 @@ from app.distribution_engine import (
     SECTION_CONFIG,
     VALID_SECTIONS,
 )
+from app.exceptions import ValidationError
 
 
 pytestmark = pytest.mark.unit
@@ -30,58 +31,58 @@ class TestValidateAssignments:
         validate_assignments(valid_assignments)
 
     def test_raises_typeerror_for_non_list(self):
-        """Should raise TypeError when assignments is not a list."""
-        with pytest.raises(TypeError, match="Expected list"):
+        """Should raise ValidationError when assignments is not a list."""
+        with pytest.raises(ValidationError, match="Expected list"):
             validate_assignments("not a list")
 
-        with pytest.raises(TypeError, match="Expected list"):
+        with pytest.raises(ValidationError, match="Expected list"):
             validate_assignments({"assignments": []})
 
-        with pytest.raises(TypeError, match="Expected list"):
+        with pytest.raises(ValidationError, match="Expected list"):
             validate_assignments(None)
 
     def test_raises_valueerror_for_empty_list(self):
-        """Should raise ValueError for empty list."""
-        with pytest.raises(ValueError, match="empty"):
+        """Should raise ValidationError for empty list."""
+        with pytest.raises(ValidationError, match="empty"):
             validate_assignments([])
 
     def test_raises_typeerror_for_non_dict_items(self):
-        """Should raise TypeError when assignment items are not dicts."""
-        with pytest.raises(TypeError, match="not a dict"):
+        """Should raise ValidationError when assignment items are not dicts."""
+        with pytest.raises(ValidationError, match="not a dict"):
             validate_assignments(["not a dict"])
 
-        with pytest.raises(TypeError, match="not a dict"):
+        with pytest.raises(ValidationError, match="not a dict"):
             validate_assignments([{"bullet": "test", "section": "spins"}, "invalid"])
 
     def test_raises_valueerror_for_missing_bullet_key(self):
-        """Should raise ValueError when 'bullet' key is missing."""
-        with pytest.raises(ValueError, match="missing 'bullet' key"):
+        """Should raise ValidationError when 'bullet' key is missing."""
+        with pytest.raises(ValidationError, match="missing 'bullet' key"):
             validate_assignments([{"section": "spins"}])
 
     def test_raises_valueerror_for_missing_section_key(self):
-        """Should raise ValueError when 'section' key is missing."""
-        with pytest.raises(ValueError, match="missing 'section' key"):
+        """Should raise ValidationError when 'section' key is missing."""
+        with pytest.raises(ValidationError, match="missing 'section' key"):
             validate_assignments([{"bullet": "test bullet"}])
 
     def test_raises_typeerror_for_non_string_bullet(self):
-        """Should raise TypeError when bullet is not a string."""
-        with pytest.raises(TypeError, match="bullet is not string"):
+        """Should raise ValidationError when bullet is not a string."""
+        with pytest.raises(ValidationError, match="bullet is not string"):
             validate_assignments([{"bullet": 123, "section": "spins"}])
 
     def test_raises_valueerror_for_empty_bullet(self):
-        """Should raise ValueError for empty or whitespace-only bullet."""
-        with pytest.raises(ValueError, match="empty bullet"):
+        """Should raise ValidationError for empty or whitespace-only bullet."""
+        with pytest.raises(ValidationError, match="empty bullet"):
             validate_assignments([{"bullet": "", "section": "spins"}])
 
-        with pytest.raises(ValueError, match="empty bullet"):
+        with pytest.raises(ValidationError, match="empty bullet"):
             validate_assignments([{"bullet": "   ", "section": "spins"}])
 
     def test_raises_valueerror_for_invalid_section(self):
-        """Should raise ValueError for invalid section names."""
-        with pytest.raises(ValueError, match="invalid section"):
+        """Should raise ValidationError for invalid section names."""
+        with pytest.raises(ValidationError, match="invalid section"):
             validate_assignments([{"bullet": "test", "section": "invalid_section"}])
 
-        with pytest.raises(ValueError, match="invalid section"):
+        with pytest.raises(ValidationError, match="invalid section"):
             validate_assignments([{"bullet": "test", "section": "SPINS"}])  # Case sensitive
 
     def test_accepts_all_valid_sections(self, make_assignments):
@@ -105,9 +106,9 @@ class TestValidateSectionDistribution:
         validate_section_distribution(sections)
 
     def test_enforces_minimum_for_primary_sections(self):
-        """Should raise ValueError when primary sections have fewer than minimum."""
+        """Should raise ValidationError when primary sections have fewer than minimum."""
         # spins requires min 10
-        with pytest.raises(ValueError, match="requires minimum 10"):
+        with pytest.raises(ValidationError, match="requires minimum 10"):
             validate_section_distribution({
                 "spins": ["b"] * 9,
                 "programmer": ["b"] * 10,
@@ -115,7 +116,7 @@ class TestValidateSectionDistribution:
             })
 
         # programmer requires min 10
-        with pytest.raises(ValueError, match="requires minimum 10"):
+        with pytest.raises(ValidationError, match="requires minimum 10"):
             validate_section_distribution({
                 "spins": ["b"] * 10,
                 "programmer": ["b"] * 5,
@@ -123,9 +124,9 @@ class TestValidateSectionDistribution:
             })
 
     def test_enforces_maximum_for_primary_sections(self):
-        """Should raise ValueError when primary sections exceed maximum."""
+        """Should raise ValidationError when primary sections exceed maximum."""
         # spins max is 12
-        with pytest.raises(ValueError, match="requires maximum 12"):
+        with pytest.raises(ValidationError, match="requires maximum 12"):
             validate_section_distribution({
                 "spins": ["b"] * 15,
                 "programmer": ["b"] * 10,
@@ -133,7 +134,7 @@ class TestValidateSectionDistribution:
             })
 
         # programmer max is 12
-        with pytest.raises(ValueError, match="requires maximum 12"):
+        with pytest.raises(ValidationError, match="requires maximum 12"):
             validate_section_distribution({
                 "spins": ["b"] * 10,
                 "programmer": ["b"] * 13,
@@ -234,10 +235,10 @@ class TestRebalance:
 
     def test_validates_input(self):
         """Should validate input assignments."""
-        with pytest.raises(TypeError):
+        with pytest.raises(ValidationError):
             rebalance("not a list")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError):
             rebalance([])
 
     def test_handles_edge_case_empty_analyst(self, make_assignments):
