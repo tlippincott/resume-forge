@@ -39,7 +39,7 @@ def list_bullet_files():
 def handle_generate(jd, job_title, company, info, bullet_file, job_change):
     """Generate resume and populate all tabs."""
     if not bullet_file:
-        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), ""
+        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", []
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
     result_obj = generate_resume_adapter(jd, company, info, bullet_file, job_change)
@@ -47,7 +47,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change):
     # Check for failure
     if isinstance(result_obj, Failure):
         error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
-        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), ""
+        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", []
 
     # Extract result from Success
     result = result_obj.value
@@ -80,6 +80,10 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change):
     programmer_text = bullets_to_text(programmer_list)
     analyst_text = bullets_to_text(analyst_list)
 
+    # Phase 3: Create canonical state (single source of truth)
+    from app.data_extractors import create_canonical_bullets
+    canonical_bullets = create_canonical_bullets(spins_with_ids, programmer_with_ids, analyst_with_ids)
+
     # Return includes new intelligence states
     return (
         result,                # JSON output
@@ -96,16 +100,29 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change):
         analyzed_bullets,      # State: analyzed_bullets (NEW)
         jd_analysis,           # State: jd_analysis (NEW)
         used_bullet_ids,       # State: used_bullet_ids (NEW)
-        jd                     # State: job_description (NEW)
+        jd,                    # State: job_description (NEW)
+        canonical_bullets      # State: canonical_bullets (Phase 3)
     )
 
 
-def handle_preview_update(summary_text, spins_text, programmer_text, analyst_text):
-    """Update preview from edit fields."""
-    # Convert textbox content to bullet lists
-    spins_list = text_to_bullets(spins_text)
-    programmer_list = text_to_bullets(programmer_text)
-    analyst_list = text_to_bullets(analyst_text)
+def handle_preview_update(summary_text, state_canonical_bullets):
+    """
+    Update preview from canonical state (Phase 3B: one-way conversion).
+
+    IMPORTANT: This function now uses canonical state instead of text to prevent
+    intelligence data loss. Preview is always derived from the single source of truth.
+    """
+    from app.data_extractors import get_section_bullets, extract_bullet_texts
+
+    # Derive section views from canonical state (model → view)
+    spins = get_section_bullets(state_canonical_bullets, "spins")
+    programmer = get_section_bullets(state_canonical_bullets, "programmer")
+    analyst = get_section_bullets(state_canonical_bullets, "analyst")
+
+    # Extract text for HTML generation
+    spins_list = extract_bullet_texts(spins)
+    programmer_list = extract_bullet_texts(programmer)
+    analyst_list = extract_bullet_texts(analyst)
 
     # Build HTML strings
     spins_html = build_html_bullets(spins_list)
@@ -581,6 +598,14 @@ Bullet #{target_index + 1} in {target_section} updated.
 **New bullet:** {replacement_bullet['text'][:100]}...
 """
 
+    # Phase 3: Update canonical state after replacement
+    from app.data_extractors import create_canonical_bullets
+    updated_canonical = create_canonical_bullets(
+        result["updated_spins"],
+        result["updated_programmer"],
+        result["updated_analyst"]
+    )
+
     return (
         gr.Markdown(value=success_msg, visible=True),
         result["spins_text"],
@@ -595,7 +620,8 @@ Bullet #{target_index + 1} in {target_section} updated.
         gr.Markdown(value="", visible=False),
         gr.Markdown(value="", visible=False),
         gr.Button(visible=False),
-        gr.Button(visible=False)
+        gr.Button(visible=False),
+        updated_canonical  # Phase 3: Return updated canonical state
     )
 
 
@@ -630,6 +656,9 @@ def launch_app():
         state_jd_analysis = gr.State(value={})            # JD keywords/skills
         state_used_bullet_ids = gr.State(value=set())     # Track which bullets are active
         state_job_description = gr.State(value="")        # Preserve for suggestions
+
+        # Phase 3: Canonical state (single source of truth for section bullets)
+        state_canonical_bullets = gr.State(value=[])      # All section bullets with "section" field
 
         # Tab 1: Generate
         with gr.Tab("Generate"):
@@ -914,7 +943,8 @@ def launch_app():
                 state_analyzed_bullets,      # NEW: Full intelligence per bullet
                 state_jd_analysis,           # NEW: JD keywords/skills
                 state_used_bullet_ids,       # NEW: Track active bullets
-                state_job_description        # NEW: Preserve JD for suggestions
+                state_job_description,       # NEW: Preserve JD for suggestions
+                state_canonical_bullets      # Phase 3: Canonical state (single source of truth)
             ]
         )
 
@@ -962,10 +992,10 @@ def launch_app():
         )
 
         # Event handlers (Tab 4: Preview & Export)
-        # Auto-update preview when tab is selected
+        # Auto-update preview when tab is selected (Phase 3B: uses canonical state)
         preview_tab.select(
             fn=handle_preview_update,
-            inputs=[edit_summary, edit_spins, edit_programmer, edit_analyst],
+            inputs=[state_summary, state_canonical_bullets],
             outputs=preview_html
         )
 
@@ -1139,7 +1169,8 @@ def launch_app():
                 suggestion_explanation,
                 coverage_warning,
                 confirm_replace_btn,
-                cancel_replace_btn
+                cancel_replace_btn,
+                state_canonical_bullets  # Phase 3: Update canonical state on replacement
             ]
         )
 
