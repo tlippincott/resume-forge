@@ -200,3 +200,44 @@ def derive_gap_file_from_bullet_file(bullet_file_path: str) -> str:
     gap_file = Path(__file__).parent.parent / "gap_libs" / f"{base_name}_gap.json"
 
     return str(gap_file) if gap_file.exists() else ""
+
+
+# ===== INTELLIGENCE-AWARE HELPER FUNCTIONS =====
+
+def get_bullet_by_text(bullet_text: str, analyzed_bullets: list) -> dict:
+    """
+    Retrieve full bullet intelligence by text.
+
+    Args:
+        bullet_text: Bullet text string
+        analyzed_bullets: List of analyzed bullet dicts
+
+    Returns:
+        Full bullet dict with intelligence, or empty dict if not found
+    """
+    for bullet in analyzed_bullets:
+        if bullet.get("text") == bullet_text:
+            return bullet
+    return {}
+
+
+def replace_bullet_in_list(bullets: list, target_index: int, replacement_bullet: dict) -> list:
+    """
+    Replace bullet at target_index with replacement_bullet.
+
+    Args:
+        bullets: List[Dict] - Current bullet list with intelligence
+        target_index: int - Index to replace (0-based)
+        replacement_bullet: Dict - New bullet with full intelligence
+
+    Returns:
+        List[Dict] - Updated bullet list
+    """
+    if 0 <= target_index < len(bullets):
+        bullets[target_index] = replacement_bullet
+    return bullets
+
+
+def extract_bullet_texts(bullets_with_intelligence: list) -> list:
+    """Extract just the text from intelligence-enriched bullets."""
+    return [b.get("text", "") if isinstance(b, dict) else b for b in bullets_with_intelligence]

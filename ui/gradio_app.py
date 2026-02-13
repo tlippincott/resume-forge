@@ -39,7 +39,7 @@ def list_bullet_files():
 def handle_generate(jd, job_title, company, info, bullet_file, job_change):
     """Generate resume and populate all tabs."""
     if not bullet_file:
-        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", ""
+        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), ""
 
     # Call existing generate_resume()
     result = generate_resume(jd, company, info, bullet_file, job_change)
@@ -50,23 +50,45 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change):
     programmer_list = result["programmer"]
     analyst_list = result["analyst"]
 
-    # Convert to edit textbox format
+    # NEW: Extract intelligence metadata
+    metadata = result.get("metadata", {})
+    analyzed_bullets = metadata.get("analyzed_bullets", [])
+    jd_analysis = metadata.get("jd_analysis", {})
+    used_bullet_ids = metadata.get("used_bullet_ids", set())
+
+    # Build bullet lookup map (text → full bullet data)
+    bullet_map = {b["text"]: b for b in analyzed_bullets}
+
+    # Enhance section lists with IDs for tracking
+    def add_bullet_ids(text_list):
+        return [bullet_map.get(text, {"text": text, "bullet_id": ""}) for text in text_list]
+
+    spins_with_ids = add_bullet_ids(spins_list)
+    programmer_with_ids = add_bullet_ids(programmer_list)
+    analyst_with_ids = add_bullet_ids(analyst_list)
+
+    # Convert to text for textboxes
     spins_text = bullets_to_text(spins_list)
     programmer_text = bullets_to_text(programmer_list)
     analyst_text = bullets_to_text(analyst_list)
 
+    # Return includes new intelligence states
     return (
         result,                # JSON output
         summary,               # Edit: summary textbox
         spins_text,           # Edit: spins textbox
         programmer_text,      # Edit: programmer textbox
         analyst_text,         # Edit: analyst textbox
-        summary,               # State
-        spins_list,           # State
-        programmer_list,      # State
-        analyst_list,         # State
+        summary,               # State: summary
+        spins_with_ids,        # State: spins (NOW includes IDs)
+        programmer_with_ids,   # State: programmer (NOW includes IDs)
+        analyst_with_ids,      # State: analyst (NOW includes IDs)
         job_title,            # State: job_title
-        bullet_file           # NEW: State: selected_bullet_file
+        bullet_file,          # State: selected_bullet_file
+        analyzed_bullets,      # State: analyzed_bullets (NEW)
+        jd_analysis,           # State: jd_analysis (NEW)
+        used_bullet_ids,       # State: used_bullet_ids (NEW)
+        jd                     # State: job_description (NEW)
     )
 
 
@@ -385,6 +407,259 @@ def handle_bullets_change(bullets_text):
     )
 
 
+# ===== INTELLIGENT REPLACEMENT EVENT HANDLERS =====
+
+def handle_get_suggestions(
+    section_name: str,
+    bullet_index: int,
+    spins_list: list,
+    programmer_list: list,
+    analyst_list: list,
+    analyzed_bullets: list,
+    jd_analysis: dict,
+    used_bullet_ids: set
+):
+    """
+    Generate intelligent replacement suggestions.
+
+    Returns:
+        Tuple of UI component updates
+    """
+    from app.bullet_intelligence import suggest_replacements
+    from ui.resume_helpers import extract_bullet_texts
+
+    # Convert 1-based to 0-based
+    index = int(bullet_index) - 1
+
+    # Get active section
+    if section_name == "SPINS":
+        active_list = spins_list
+    elif section_name == "Programmer":
+        active_list = programmer_list
+    else:  # Analyst
+        active_list = analyst_list
+
+    # Validate index
+    if index < 0 or index >= len(active_list):
+        error_msg = f"❌ Invalid bullet index: {bullet_index}. Section has {len(active_list)} bullets."
+        return (
+            gr.Markdown(value="", visible=False),
+            gr.Radio(choices=[], visible=False),
+            gr.Markdown(value="", visible=False),
+            gr.Markdown(value="", visible=False),
+            "",
+            0,
+            {},
+            gr.Button(visible=False),
+            gr.Button(visible=False),
+            gr.Markdown(value=error_msg, visible=True)
+        )
+
+    # Get removed bullet
+    removed_bullet = active_list[index]
+    removed_text = removed_bullet.get("text", str(removed_bullet))
+
+    # Get top 5 suggestions
+    suggestions = suggest_replacements(
+        removed_bullet=removed_bullet,
+        all_bullets=analyzed_bullets,
+        active_bullet_ids=used_bullet_ids,
+        active_bullets=active_list,
+        jd_analysis=jd_analysis
+    )
+
+    # Format removed bullet display
+    removed_display = f"""#### Replacing Bullet #{bullet_index}:
+**Original:** {removed_text[:150]}{"..." if len(removed_text) > 150 else ""}
+
+**Category:** {removed_bullet.get('category', 'unknown')} | **JD Score:** {removed_bullet.get('jd_score', 0)}
+"""
+
+    # Format suggestions for radio
+    choices = []
+    for i, sugg in enumerate(suggestions, 1):
+        bullet = sugg["bullet"]
+        score = sugg["score"]
+        text = bullet["text"]
+
+        # Truncate for display
+        display_text = text[:100] + "..." if len(text) > 100 else text
+
+        # Format: "⭐ 8.5 | [frontend] Bullet text..."
+        choice_label = f"⭐ {score:.1f} | [{bullet['category']}] {display_text}"
+        choices.append((choice_label, bullet["bullet_id"]))
+
+    # Default explanation for first suggestion
+    first_explanation = ""
+    if suggestions:
+        first_explanation = f"""#### Why This Suggestion?
+{suggestions[0]['explanation']}
+
+**Details:**
+- **Category:** {suggestions[0]['bullet']['category']}
+- **Keywords:** {', '.join(suggestions[0]['bullet']['keywords'][:5])}
+- **Has Impact:** {'✓ Yes' if suggestions[0]['bullet']['has_impact'] else '✗ No'}
+- **JD Score:** {suggestions[0]['bullet']['jd_score']}
+"""
+
+    # Skills coverage check
+    coverage_msg = ""
+    if suggestions:
+        # Check if top suggestion has high skill overlap with active bullets
+        top_bullet = suggestions[0]["bullet"]
+        active_keywords = set()
+        for b in active_list:
+            active_keywords.update(b.get("keywords", []))
+
+        top_keywords = set(top_bullet.get("keywords", []))
+        overlap = top_keywords & active_keywords
+
+        if len(overlap) >= 3:
+            coverage_msg = f"""⚠️ **Skills Coverage Warning**
+Top suggestion shares {len(overlap)} skills with existing bullets: {', '.join(list(overlap)[:4])}
+
+Consider lower-ranked suggestions for better skill diversity.
+"""
+
+    return (
+        gr.Markdown(value=removed_display, visible=True),
+        gr.Radio(choices=choices, value=choices[0][1] if choices else None, visible=True),
+        gr.Markdown(value=first_explanation, visible=True),
+        gr.Markdown(value=coverage_msg, visible=True) if coverage_msg else gr.Markdown(value="", visible=False),
+        section_name,
+        index,
+        removed_bullet,
+        gr.Button(visible=True),
+        gr.Button(visible=True),
+        gr.Markdown(value="", visible=False)
+    )
+
+
+def handle_suggestion_selected(
+    selected_bullet_id: str,
+    analyzed_bullets: list,
+    jd_analysis: dict
+):
+    """Update explanation when user selects a different suggestion."""
+    from app.bullet_intelligence import generate_explanation
+
+    # Find selected bullet
+    selected = None
+    for bullet in analyzed_bullets:
+        if bullet["bullet_id"] == selected_bullet_id:
+            selected = bullet
+            break
+
+    if not selected:
+        return ""
+
+    explanation = f"""#### Why This Suggestion?
+{generate_explanation(selected, {}, jd_analysis)}
+
+**Details:**
+- **Category:** {selected['category']}
+- **Keywords:** {', '.join(selected['keywords'][:5])}
+- **Has Impact:** {'✓ Yes' if selected['has_impact'] else '✗ No'}
+- **JD Score:** {selected['jd_score']}
+"""
+    return explanation
+
+
+def handle_confirm_replacement(
+    target_section: str,
+    target_index: int,
+    selected_bullet_id: str,
+    spins_list: list,
+    programmer_list: list,
+    analyst_list: list,
+    analyzed_bullets: list,
+    used_bullet_ids: set
+):
+    """
+    Execute the intelligent bullet replacement.
+
+    Returns updated state and UI elements.
+    """
+    from ui.resume_helpers import replace_bullet_in_list, extract_bullet_texts
+
+    # Find replacement bullet by ID
+    replacement_bullet = None
+    for bullet in analyzed_bullets:
+        if bullet["bullet_id"] == selected_bullet_id:
+            replacement_bullet = bullet
+            break
+
+    if not replacement_bullet:
+        error_msg = "❌ Error: Could not find selected bullet."
+        return tuple([gr.Markdown(value=error_msg, visible=True)] + [gr.update()] * 13)
+
+    # Update appropriate section
+    if target_section == "SPINS":
+        old_bullet = spins_list[target_index]
+        spins_list = replace_bullet_in_list(spins_list.copy(), target_index, replacement_bullet)
+        updated_spins = spins_list
+        updated_programmer = programmer_list
+        updated_analyst = analyst_list
+    elif target_section == "Programmer":
+        old_bullet = programmer_list[target_index]
+        programmer_list = replace_bullet_in_list(programmer_list.copy(), target_index, replacement_bullet)
+        updated_spins = spins_list
+        updated_programmer = programmer_list
+        updated_analyst = analyst_list
+    else:  # Analyst
+        old_bullet = analyst_list[target_index]
+        analyst_list = replace_bullet_in_list(analyst_list.copy(), target_index, replacement_bullet)
+        updated_spins = spins_list
+        updated_programmer = programmer_list
+        updated_analyst = analyst_list
+
+    # Update used bullet IDs
+    used_bullet_ids = used_bullet_ids.copy()
+    used_bullet_ids.discard(old_bullet.get("bullet_id", ""))
+    used_bullet_ids.add(replacement_bullet["bullet_id"])
+
+    # Convert to text
+    spins_text = bullets_to_text(extract_bullet_texts(updated_spins))
+    programmer_text = bullets_to_text(extract_bullet_texts(updated_programmer))
+    analyst_text = bullets_to_text(extract_bullet_texts(updated_analyst))
+
+    success_msg = f"""✓ **Replacement Complete!**
+Bullet #{target_index + 1} in {target_section} updated.
+
+**New bullet:** {replacement_bullet['text'][:100]}...
+"""
+
+    return (
+        gr.Markdown(value=success_msg, visible=True),
+        spins_text,
+        programmer_text,
+        analyst_text,
+        updated_spins,
+        updated_programmer,
+        updated_analyst,
+        used_bullet_ids,
+        gr.Markdown(value="", visible=False),
+        gr.Radio(choices=[], visible=False),
+        gr.Markdown(value="", visible=False),
+        gr.Markdown(value="", visible=False),
+        gr.Button(visible=False),
+        gr.Button(visible=False)
+    )
+
+
+def handle_cancel_replacement():
+    """Cancel replacement and hide suggestions panel."""
+    return (
+        gr.Markdown(value="", visible=False),
+        gr.Radio(choices=[], visible=False),
+        gr.Markdown(value="", visible=False),
+        gr.Markdown(value="", visible=False),
+        gr.Button(visible=False),
+        gr.Button(visible=False),
+        gr.Markdown(value="", visible=False)
+    )
+
+
 def launch_app():
     with gr.Blocks() as demo:
         gr.Markdown("## Resume Forge")
@@ -397,6 +672,12 @@ def launch_app():
         state_job_title = gr.State(value="")
         state_cover_letter_html = gr.State(value="")
         state_selected_bullet_file = gr.State(value="")
+
+        # NEW states for intelligent replacement
+        state_analyzed_bullets = gr.State(value=[])       # All bullet intelligence
+        state_jd_analysis = gr.State(value={})            # JD keywords/skills
+        state_used_bullet_ids = gr.State(value=set())     # Track which bullets are active
+        state_job_description = gr.State(value="")        # Preserve for suggestions
 
         # Tab 1: Generate
         with gr.Tab("Generate"):
@@ -417,10 +698,116 @@ def launch_app():
 
         # Tab 2: Edit
         with gr.Tab("Edit"):
-            edit_summary = gr.Textbox(label="Summary", lines=4, interactive=True)
-            edit_spins = gr.Textbox(label="SPINS Bullets (one per line)", lines=12, interactive=True)
-            edit_programmer = gr.Textbox(label="Programmer Bullets (one per line)", lines=12, interactive=True)
-            edit_analyst = gr.Textbox(label="Analyst Bullets (one per line)", lines=12, interactive=True)
+            gr.Markdown("### Review and Edit Generated Content")
+
+            with gr.Row():
+                # Left column: Existing edit textboxes
+                with gr.Column(scale=2):
+                    edit_summary = gr.Textbox(
+                        label="Professional Summary",
+                        lines=4,
+                        interactive=True
+                    )
+
+                    with gr.Accordion("SPINS Bullets (End-User Interaction)", open=True):
+                        edit_spins = gr.Textbox(
+                            label="Edit bullets (one per line)",
+                            lines=12,
+                            interactive=True
+                        )
+                        with gr.Row():
+                            spins_bullet_index = gr.Number(
+                                label="Bullet # to replace",
+                                value=1,
+                                precision=0,
+                                minimum=1
+                            )
+                            open_replacement_spins = gr.Button("Get Suggestions", size="sm", variant="primary")
+
+                    with gr.Accordion("Programmer Bullets (Technical Implementation)", open=True):
+                        edit_programmer = gr.Textbox(
+                            label="Edit bullets (one per line)",
+                            lines=12,
+                            interactive=True
+                        )
+                        with gr.Row():
+                            programmer_bullet_index = gr.Number(
+                                label="Bullet # to replace",
+                                value=1,
+                                precision=0,
+                                minimum=1
+                            )
+                            open_replacement_programmer = gr.Button("Get Suggestions", size="sm", variant="primary")
+
+                    with gr.Accordion("Analyst Bullets (Analysis & Documentation)", open=True):
+                        edit_analyst = gr.Textbox(
+                            label="Edit bullets (one per line)",
+                            lines=12,
+                            interactive=True
+                        )
+                        with gr.Row():
+                            analyst_bullet_index = gr.Number(
+                                label="Bullet # to replace",
+                                value=1,
+                                precision=0,
+                                minimum=1
+                            )
+                            open_replacement_analyst = gr.Button("Get Suggestions", size="sm", variant="primary")
+
+                # Right column: Intelligent Suggestions Panel (NEW)
+                with gr.Column(scale=1) as suggestions_panel:
+                    gr.Markdown("### 🎯 Smart Replacement Suggestions")
+                    gr.Markdown("*AI-ranked suggestions based on skills, category, and job fit*")
+
+                    # Display removed bullet context
+                    removed_bullet_display = gr.Markdown(
+                        value="",
+                        visible=False,
+                        label="Replacing:"
+                    )
+
+                    # Top 5 suggestions with explanations
+                    suggestions_radio = gr.Radio(
+                        choices=[],
+                        label="Top 5 Recommended Replacements",
+                        interactive=True,
+                        visible=False
+                    )
+
+                    # Show detailed explanation for selected suggestion
+                    suggestion_explanation = gr.Markdown(
+                        value="",
+                        visible=False
+                    )
+
+                    # Skills coverage warning
+                    coverage_warning = gr.Markdown(
+                        value="",
+                        visible=False
+                    )
+
+                    # Active replacement tracking (state)
+                    replacement_target_section = gr.State(value="")
+                    replacement_target_index = gr.State(value=0)
+                    replacement_removed_bullet = gr.State(value={})
+
+                    # Action buttons
+                    with gr.Row():
+                        confirm_replace_btn = gr.Button(
+                            "✓ Confirm Replacement",
+                            variant="primary",
+                            visible=False
+                        )
+                        cancel_replace_btn = gr.Button(
+                            "✗ Cancel",
+                            visible=False
+                        )
+
+                    # Status/feedback
+                    replacement_status = gr.Markdown(
+                        value="",
+                        visible=False
+                    )
 
         # Tab 3: Bullet Library Editor
         with gr.Tab("Bullet Library Editor"):
@@ -567,11 +954,15 @@ def launch_app():
                 edit_programmer,     # Tab 2
                 edit_analyst,        # Tab 2
                 state_summary,       # State
-                state_spins,         # State
-                state_programmer,    # State
-                state_analyst,       # State
+                state_spins,         # State (NOW includes intelligence)
+                state_programmer,    # State (NOW includes intelligence)
+                state_analyst,       # State (NOW includes intelligence)
                 state_job_title,     # State
-                state_selected_bullet_file  # NEW: State
+                state_selected_bullet_file,  # State
+                state_analyzed_bullets,      # NEW: Full intelligence per bullet
+                state_jd_analysis,           # NEW: JD keywords/skills
+                state_used_bullet_ids,       # NEW: Track active bullets
+                state_job_description        # NEW: Preserve JD for suggestions
             ]
         )
 
@@ -677,6 +1068,141 @@ def launch_app():
             fn=handle_gap_role_change,
             inputs=gap_role_dropdown,
             outputs=gap_text
+        )
+
+        # ===== INTELLIGENT REPLACEMENT EVENT HANDLERS =====
+
+        # SPINS section - Get suggestions
+        open_replacement_spins.click(
+            fn=handle_get_suggestions,
+            inputs=[
+                gr.State(value="SPINS"),
+                spins_bullet_index,
+                state_spins,
+                state_programmer,
+                state_analyst,
+                state_analyzed_bullets,
+                state_jd_analysis,
+                state_used_bullet_ids
+            ],
+            outputs=[
+                removed_bullet_display,
+                suggestions_radio,
+                suggestion_explanation,
+                coverage_warning,
+                replacement_target_section,
+                replacement_target_index,
+                replacement_removed_bullet,
+                confirm_replace_btn,
+                cancel_replace_btn,
+                replacement_status
+            ]
+        )
+
+        # Programmer section - Get suggestions
+        open_replacement_programmer.click(
+            fn=handle_get_suggestions,
+            inputs=[
+                gr.State(value="Programmer"),
+                programmer_bullet_index,
+                state_spins,
+                state_programmer,
+                state_analyst,
+                state_analyzed_bullets,
+                state_jd_analysis,
+                state_used_bullet_ids
+            ],
+            outputs=[
+                removed_bullet_display,
+                suggestions_radio,
+                suggestion_explanation,
+                coverage_warning,
+                replacement_target_section,
+                replacement_target_index,
+                replacement_removed_bullet,
+                confirm_replace_btn,
+                cancel_replace_btn,
+                replacement_status
+            ]
+        )
+
+        # Analyst section - Get suggestions
+        open_replacement_analyst.click(
+            fn=handle_get_suggestions,
+            inputs=[
+                gr.State(value="Analyst"),
+                analyst_bullet_index,
+                state_spins,
+                state_programmer,
+                state_analyst,
+                state_analyzed_bullets,
+                state_jd_analysis,
+                state_used_bullet_ids
+            ],
+            outputs=[
+                removed_bullet_display,
+                suggestions_radio,
+                suggestion_explanation,
+                coverage_warning,
+                replacement_target_section,
+                replacement_target_index,
+                replacement_removed_bullet,
+                confirm_replace_btn,
+                cancel_replace_btn,
+                replacement_status
+            ]
+        )
+
+        # Update explanation when selection changes
+        suggestions_radio.change(
+            fn=handle_suggestion_selected,
+            inputs=[suggestions_radio, state_analyzed_bullets, state_jd_analysis],
+            outputs=[suggestion_explanation]
+        )
+
+        # Confirm replacement
+        confirm_replace_btn.click(
+            fn=handle_confirm_replacement,
+            inputs=[
+                replacement_target_section,
+                replacement_target_index,
+                suggestions_radio,
+                state_spins,
+                state_programmer,
+                state_analyst,
+                state_analyzed_bullets,
+                state_used_bullet_ids
+            ],
+            outputs=[
+                replacement_status,
+                edit_spins,
+                edit_programmer,
+                edit_analyst,
+                state_spins,
+                state_programmer,
+                state_analyst,
+                state_used_bullet_ids,
+                removed_bullet_display,
+                suggestions_radio,
+                suggestion_explanation,
+                coverage_warning,
+                confirm_replace_btn,
+                cancel_replace_btn
+            ]
+        )
+
+        # Cancel replacement
+        cancel_replace_btn.click(
+            fn=handle_cancel_replacement,
+            outputs=[
+                removed_bullet_display,
+                suggestions_radio,
+                suggestion_explanation,
+                coverage_warning,
+                confirm_replace_btn,
+                cancel_replace_btn,
+                replacement_status
+            ]
         )
 
     demo.launch(theme=gr.themes.Soft())
