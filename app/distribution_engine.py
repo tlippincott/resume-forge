@@ -21,6 +21,10 @@ Configuration:
 from typing import List, Dict, Any, Optional
 from app.openai_client import call_openai_json
 from app.prompts import distribution_prompt
+from app.exceptions import ValidationError, DataProcessingError
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # Configuration: Single Source of Truth
@@ -61,38 +65,37 @@ def validate_assignments(assignments: List[Dict[str, Any]]) -> None:
         assignments: List of assignment dicts from LLM
 
     Raises:
-        ValueError: If structure is invalid or contains invalid data
-        TypeError: If assignments is not a list
+        ValidationError: If structure is invalid or contains invalid data
     """
     if not isinstance(assignments, list):
-        raise TypeError(f"Expected list, got {type(assignments).__name__}")
+        raise ValidationError(f"Expected list, got {type(assignments).__name__}")
 
     if not assignments:
-        raise ValueError("Assignments list is empty")
+        raise ValidationError("Assignments list is empty")
 
     for i, assignment in enumerate(assignments):
         # Check required keys
         if not isinstance(assignment, dict):
-            raise TypeError(f"Assignment {i} is not a dict: {assignment}")
+            raise ValidationError(f"Assignment {i} is not a dict: {assignment}")
 
         if "bullet" not in assignment:
-            raise ValueError(f"Assignment {i} missing 'bullet' key: {assignment}")
+            raise ValidationError(f"Assignment {i} missing 'bullet' key: {assignment}")
 
         if "section" not in assignment:
-            raise ValueError(f"Assignment {i} missing 'section' key: {assignment}")
+            raise ValidationError(f"Assignment {i} missing 'section' key: {assignment}")
 
         # Check data types
         bullet = assignment["bullet"]
         if not isinstance(bullet, str):
-            raise TypeError(f"Assignment {i} bullet is not string: {type(bullet).__name__}")
+            raise ValidationError(f"Assignment {i} bullet is not string: {type(bullet).__name__}")
 
         if not bullet.strip():
-            raise ValueError(f"Assignment {i} has empty bullet")
+            raise ValidationError(f"Assignment {i} has empty bullet")
 
         # Check section validity
         section = assignment["section"]
         if section not in VALID_SECTIONS:
-            raise ValueError(
+            raise ValidationError(
                 f"Assignment {i} has invalid section '{section}'. "
                 f"Valid sections: {', '.join(sorted(VALID_SECTIONS))}"
             )
@@ -106,7 +109,7 @@ def validate_section_distribution(sections: Dict[str, List[str]]) -> None:
         sections: Dict mapping section names to bullet lists
 
     Raises:
-        ValueError: If constraints are violated
+        ValidationError: If constraints are violated
 
     Note: This is used for post-rebalance verification in tests/debugging
     """
@@ -118,13 +121,13 @@ def validate_section_distribution(sections: Dict[str, List[str]]) -> None:
         max_bullets = config["max_bullets"]
 
         if min_bullets and count < min_bullets:
-            raise ValueError(
+            raise ValidationError(
                 f"Section '{section_name}' has {count} bullets, "
                 f"requires minimum {min_bullets}"
             )
 
         if max_bullets and count > max_bullets:
-            raise ValueError(
+            raise ValidationError(
                 f"Section '{section_name}' has {count} bullets, "
                 f"requires maximum {max_bullets}"
             )
@@ -147,7 +150,7 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
         - "section" (str): One of "spins", "programmer", "analyst"
 
     Raises:
-        ValueError: If LLM response is invalid or malformed
+        DataProcessingError: If LLM response is invalid or malformed
 
     Example:
         >>> bullets = ["Fixed customer issues", "Wrote Python scripts"]
@@ -157,6 +160,7 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
             {"bullet": "Wrote Python scripts", "section": "programmer"}
         ]
     """
+    logger.debug(f"Classifying {len(bullets)} bullets into sections")
     response = call_openai_json(
         distribution_prompt(bullets),
         temperature=0.0,  # Deterministic classification
@@ -165,10 +169,12 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
 
     # Validate response structure
     if not isinstance(response, dict):
-        raise ValueError(f"Expected dict from LLM, got {type(response).__name__}")
+        logger.error(f"Expected dict from LLM, got {type(response).__name__}")
+        raise DataProcessingError(f"Expected dict from LLM, got {type(response).__name__}")
 
     if "assignments" not in response:
-        raise ValueError(
+        logger.error(f"LLM response missing 'assignments' key. Got keys: {list(response.keys())}")
+        raise DataProcessingError(
             f"LLM response missing 'assignments' key. Got keys: {list(response.keys())}"
         )
 
@@ -177,6 +183,7 @@ def classify_bullets(bullets: List[str]) -> List[Dict[str, str]]:
     # Validate assignments
     validate_assignments(assignments)
 
+    logger.info(f"Successfully classified {len(assignments)} bullets")
     return assignments
 
 
@@ -205,7 +212,7 @@ def rebalance(assignments: List[Dict[str, str]]) -> Dict[str, List[str]]:
         }
 
     Raises:
-        ValueError: If assignments structure is invalid
+        ValidationError: If assignments structure is invalid
 
     Example:
         >>> assignments = [
@@ -221,6 +228,8 @@ def rebalance(assignments: List[Dict[str, str]]) -> Dict[str, List[str]]:
     """
     # Validate input
     validate_assignments(assignments)
+
+    logger.debug(f"Rebalancing {len(assignments)} bullets across sections")
 
     # 1. Initialize sections from configuration
     sections: Dict[str, List[str]] = {name: [] for name in SECTION_CONFIG.keys()}
@@ -262,6 +271,8 @@ def rebalance(assignments: List[Dict[str, str]]) -> Dict[str, List[str]]:
     # 5. Add collected overflow to overflow section
     sections[OVERFLOW_SECTION].extend(overflow)
 
+    logger.info(f"Rebalanced sections: spins={len(sections['spins'])}, "
+                f"programmer={len(sections['programmer'])}, analyst={len(sections['analyst'])}")
     return sections
 
 

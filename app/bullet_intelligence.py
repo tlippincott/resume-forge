@@ -6,6 +6,9 @@ Extracts keywords, categories, impact metrics, and computes JD alignment scores.
 import re
 from typing import List, Dict, Set, Any
 from app.openai_client import call_openai_json
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # ===== WEIGHT CONSTANTS =====
@@ -31,16 +34,21 @@ def analyze_job_description(job_description: str) -> Dict[str, Any]:
             "job_categories": ["frontend", "backend", ...]
         }
     """
+    logger.debug("Analyzing job description for keywords and skills")
     prompt = _build_jd_analysis_prompt(job_description)
     result = call_openai_json(prompt, temperature=0.0, timeout=60)
 
     # Normalize to lowercase for matching
-    return {
+    analysis = {
         "required_skills": [s.lower() for s in result.get("required_skills", [])],
         "preferred_skills": [s.lower() for s in result.get("preferred_skills", [])],
         "all_keywords": [k.lower() for k in result.get("all_keywords", [])],
         "job_categories": result.get("job_categories", [])
     }
+    logger.info(f"JD analysis: {len(analysis['required_skills'])} required skills, "
+                f"{len(analysis['preferred_skills'])} preferred skills, "
+                f"{len(analysis['job_categories'])} categories")
+    return analysis
 
 
 def _build_jd_analysis_prompt(job_description: str) -> List[Dict[str, str]]:
@@ -88,6 +96,7 @@ def analyze_bullets(bullets: List[str]) -> List[Dict[str, Any]]:
             "has_impact": True
         }
     """
+    logger.debug(f"Analyzing {len(bullets)} bullets for keywords and categories")
     prompt = _build_bullet_analysis_prompt(bullets)
     result = call_openai_json(prompt, temperature=0.0, timeout=90)
 
@@ -103,6 +112,7 @@ def analyze_bullets(bullets: List[str]) -> List[Dict[str, Any]]:
             "has_impact": bullet_data.get("has_impact", False)
         })
 
+    logger.info(f"Analyzed {len(analyzed)} bullets with intelligence metadata")
     return analyzed
 
 
@@ -216,6 +226,8 @@ def suggest_replacements(
             "explanation": "why this is a good choice"
         }
     """
+    logger.debug(f"Suggesting replacements for bullet in category '{removed_bullet.get('category')}', "
+                 f"{len(all_bullets)} candidates available, {len(active_bullet_ids)} already in use")
     candidates = []
 
     for bullet in all_bullets:
@@ -257,7 +269,9 @@ def suggest_replacements(
 
     # Sort by score (descending) and return top 5
     candidates.sort(key=lambda x: x["score"], reverse=True)
-    return candidates[:5]
+    top_5 = candidates[:5]
+    logger.info(f"Generated {len(top_5)} replacement suggestions")
+    return top_5
 
 
 def calculate_skill_coverage_penalty(
@@ -336,5 +350,8 @@ def get_cached_jd_analysis(job_description: str) -> Dict[str, Any]:
     """Get or create cached JD analysis."""
     jd_hash = hash(job_description)
     if jd_hash not in _jd_analysis_cache:
+        logger.debug("JD analysis cache miss, analyzing job description")
         _jd_analysis_cache[jd_hash] = analyze_job_description(job_description)
+    else:
+        logger.debug("JD analysis cache hit")
     return _jd_analysis_cache[jd_hash]

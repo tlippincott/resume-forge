@@ -1,5 +1,9 @@
 import html
 from app.openai_client import call_openai_json
+from app.exceptions import DataProcessingError
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 def cover_letter_prompt(summary, bullets, job_title, job_description, company_name,
                         company_info, job_change, company_interest=None,
@@ -321,20 +325,54 @@ Before returning your response, verify:
 def generate_cover_letter(resume_data, job_title, job_description, company_name,
                            company_info, job_change, company_interest=None,
                            gap_explanation=None):
+   """
+   Generate a tailored cover letter based on resume data and job description.
+
+   Args:
+       resume_data: Resume data dict containing summary and section bullets
+       job_title: Target job title
+       job_description: Target job description
+       company_name: Target company name
+       company_info: Information about the target company
+       job_change: Boolean indicating if this is a career change
+       company_interest: Optional dict with hook, alignment, credibility_anchor
+       gap_explanation: Optional employment gap explanation text
+
+   Returns:
+       HTML-formatted cover letter body
+
+   Raises:
+       DataProcessingError: If cover letter generation fails
+   """
+   logger.info(f"Generating cover letter for {job_title} at {company_name}")
 
    bullets = resume_data["spins"] + resume_data["programmer"] + resume_data["analyst"]
+   logger.debug(f"Using {len(bullets)} bullets from resume")
 
-   result = call_openai_json(
-      cover_letter_prompt(
-            resume_data["summary"], bullets,
-            job_title, job_description,
-            company_name, company_info, job_change,
-            company_interest,
-            gap_explanation
-      ),
-      temperature=0.7,
-      timeout=90
-   )
+   try:
+      result = call_openai_json(
+         cover_letter_prompt(
+               resume_data["summary"], bullets,
+               job_title, job_description,
+               company_name, company_info, job_change,
+               company_interest,
+               gap_explanation
+         ),
+         temperature=0.7,
+         timeout=90
+      )
+   except Exception as e:
+      logger.error(f"Failed to generate cover letter: {e}")
+      raise
 
+   if "cover_letter_body" not in result:
+      logger.error("LLM response missing 'cover_letter_body' key")
+      raise DataProcessingError("Invalid LLM response: missing cover_letter_body")
+
+   if not isinstance(result["cover_letter_body"], list):
+      logger.error("cover_letter_body is not a list")
+      raise DataProcessingError("Invalid LLM response: cover_letter_body must be a list")
+
+   logger.info(f"Generated cover letter with {len(result['cover_letter_body'])} paragraphs")
    escaped_paragraphs = [html.escape(p) for p in result["cover_letter_body"]]
    return "<p>" + "</p><p>".join(escaped_paragraphs) + "</p>"

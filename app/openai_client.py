@@ -3,8 +3,11 @@ import time
 from openai import OpenAI
 from openai import APIError, APITimeoutError, RateLimitError, APIConnectionError
 from app.config import API_KEY, MODEL_NAME
+from app.exceptions import LLMServiceError
+from app.logging_config import get_logger
 
 client = OpenAI(api_key=API_KEY)
+logger = get_logger(__name__)
 
 # Timeout and retry configuration
 DEFAULT_TIMEOUT = 60  # seconds
@@ -26,8 +29,9 @@ def call_openai_json(messages, temperature=0.0, timeout=None):
         Parsed JSON response from the API
 
     Raises:
-        RuntimeError: On JSON parse failure, auth errors, or max retries exceeded
+        LLMServiceError: On JSON parse failure, auth errors, or max retries exceeded
     """
+    logger.debug(f"Calling OpenAI API with {len(messages)} messages, temperature={temperature}, timeout={timeout}s")
     if timeout is None:
         timeout = DEFAULT_TIMEOUT
 
@@ -46,14 +50,19 @@ def call_openai_json(messages, temperature=0.0, timeout=None):
             )
 
             if not response.choices:
-                raise RuntimeError("OpenAI returned empty response")
+                logger.error("OpenAI returned empty response")
+                raise LLMServiceError("OpenAI returned empty response")
 
-            return json.loads(response.choices[0].message.content)
+            result = json.loads(response.choices[0].message.content)
+            logger.debug(f"OpenAI API call successful on attempt {attempt + 1}")
+            return result
 
         except json.JSONDecodeError as e:
             # Retry on JSON parse failures (malformed API response)
+            logger.warning(f"JSON parse failure on attempt {attempt + 1}: {e}")
             if attempt == MAX_RETRIES:
-                raise RuntimeError(
+                logger.error(f"JSON parse failure after {MAX_RETRIES + 1} attempts: {e}")
+                raise LLMServiceError(
                     f"JSON parse failure after {MAX_RETRIES + 1} attempts: {e}"
                 )
             time.sleep(retry_delay)
@@ -61,8 +70,10 @@ def call_openai_json(messages, temperature=0.0, timeout=None):
 
         except RateLimitError as e:
             # Retry on rate limits with exponential backoff
+            logger.warning(f"Rate limit exceeded on attempt {attempt + 1}, retrying with {retry_delay}s delay")
             if attempt == MAX_RETRIES:
-                raise RuntimeError(
+                logger.error(f"Rate limit exceeded after {MAX_RETRIES + 1} attempts: {e}")
+                raise LLMServiceError(
                     f"Rate limit exceeded after {MAX_RETRIES + 1} attempts. "
                     f"Please wait before retrying. Error: {e}"
                 )
@@ -71,8 +82,10 @@ def call_openai_json(messages, temperature=0.0, timeout=None):
 
         except APITimeoutError as e:
             # Retry on timeouts
+            logger.warning(f"API timeout on attempt {attempt + 1} (timeout: {timeout}s)")
             if attempt == MAX_RETRIES:
-                raise RuntimeError(
+                logger.error(f"API request timed out after {MAX_RETRIES + 1} attempts (timeout: {timeout}s): {e}")
+                raise LLMServiceError(
                     f"API request timed out after {MAX_RETRIES + 1} attempts "
                     f"(timeout: {timeout}s). Error: {e}"
                 )
@@ -81,8 +94,10 @@ def call_openai_json(messages, temperature=0.0, timeout=None):
 
         except APIConnectionError as e:
             # Retry on connection errors
+            logger.warning(f"API connection error on attempt {attempt + 1}")
             if attempt == MAX_RETRIES:
-                raise RuntimeError(
+                logger.error(f"API connection failed after {MAX_RETRIES + 1} attempts: {e}")
+                raise LLMServiceError(
                     f"API connection failed after {MAX_RETRIES + 1} attempts. "
                     f"Check your internet connection. Error: {e}"
                 )
@@ -91,14 +106,17 @@ def call_openai_json(messages, temperature=0.0, timeout=None):
 
         except APIError as e:
             # Don't retry on API errors (auth, invalid request, etc.)
-            raise RuntimeError(
+            logger.error(f"OpenAI API error (attempt {attempt + 1}/{MAX_RETRIES + 1}): {e}")
+            raise LLMServiceError(
                 f"OpenAI API error (attempt {attempt + 1}/{MAX_RETRIES + 1}): {e}"
             )
 
         except (KeyError, AttributeError) as e:
             # Retry on unexpected response structure
+            logger.warning(f"Unexpected API response structure on attempt {attempt + 1}: {e}")
             if attempt == MAX_RETRIES:
-                raise RuntimeError(
+                logger.error(f"Unexpected API response structure after {MAX_RETRIES + 1} attempts: {e}")
+                raise LLMServiceError(
                     f"Unexpected API response structure after {MAX_RETRIES + 1} attempts: {e}"
                 )
             time.sleep(retry_delay)

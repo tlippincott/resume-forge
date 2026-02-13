@@ -1,7 +1,7 @@
 import gradio as gr
-from app.resume_engine import generate_resume
-from app.cover_engine import generate_cover_letter
 from pathlib import Path
+from ui.adapters import generate_resume_adapter, generate_cover_letter_adapter
+from app.error_result import Success, Failure
 from ui.resume_helpers import (
     build_html_bullets,
     bullets_to_text,
@@ -41,8 +41,16 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change):
     if not bullet_file:
         return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), ""
 
-    # Call existing generate_resume()
-    result = generate_resume(jd, company, info, bullet_file, job_change)
+    # Call adapter (no try/except needed - adapter handles all exceptions)
+    result_obj = generate_resume_adapter(jd, company, info, bullet_file, job_change)
+
+    # Check for failure
+    if isinstance(result_obj, Failure):
+        error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
+        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), ""
+
+    # Extract result from Success
+    result = result_obj.value
 
     # Extract plain lists (no parsing needed)
     summary = result["summary"]
@@ -124,63 +132,67 @@ def handle_generate_cover_letter(summary_text, spins_text, programmer_text, anal
                                     company_hook, personal_alignment, credibility_anchor,
                                     include_gap, gap_text):
     """Generate cover letter from edited resume content and job details."""
-    try:
-        # Validate required inputs
-        if not summary_text or not summary_text.strip():
-            return {"error": "Please generate a resume first"}, ""
+    # Validate required inputs (UI-level validation)
+    if not summary_text or not summary_text.strip():
+        return {"error": "Please generate a resume first"}, ""
 
-        if not job_title or not job_title.strip():
-            return {"error": "Please enter a job title in the Generate tab"}, ""
+    if not job_title or not job_title.strip():
+        return {"error": "Please enter a job title in the Generate tab"}, ""
 
-        if not jd or not jd.strip():
-            return {"error": "Job description is required"}, ""
+    if not jd or not jd.strip():
+        return {"error": "Job description is required"}, ""
 
-        if not company or not company.strip():
-            return {"error": "Company name is required"}, ""
+    if not company or not company.strip():
+        return {"error": "Company name is required"}, ""
 
-        # Convert edit textboxes to bullet lists
-        spins_list = text_to_bullets(spins_text)
-        programmer_list = text_to_bullets(programmer_text)
-        analyst_list = text_to_bullets(analyst_text)
+    # Convert edit textboxes to bullet lists
+    spins_list = text_to_bullets(spins_text)
+    programmer_list = text_to_bullets(programmer_text)
+    analyst_list = text_to_bullets(analyst_text)
 
-        # Build resume_data dict
-        resume_data = {
-            "summary": summary_text,
-            "spins": spins_list,
-            "programmer": programmer_list,
-            "analyst": analyst_list
+    # Build resume_data dict
+    resume_data = {
+        "summary": summary_text,
+        "spins": spins_list,
+        "programmer": programmer_list,
+        "analyst": analyst_list
+    }
+
+    # Build company_interest dict (pass None if all empty)
+    company_interest = None
+    if company_hook or personal_alignment or credibility_anchor:
+        company_interest = {
+            "hook": company_hook.strip() if company_hook else "",
+            "alignment": personal_alignment.strip() if personal_alignment else "",
+            "credibility_anchor": credibility_anchor.strip() if credibility_anchor else ""
         }
 
-        # Build company_interest dict (pass None if all empty)
-        company_interest = None
-        if company_hook or personal_alignment or credibility_anchor:
-            company_interest = {
-                "hook": company_hook.strip() if company_hook else "",
-                "alignment": personal_alignment.strip() if personal_alignment else "",
-                "credibility_anchor": credibility_anchor.strip() if credibility_anchor else ""
-            }
+    # NEW: Prepare gap explanation (pass None if not included or empty)
+    gap_explanation = None
+    if include_gap and gap_text and gap_text.strip():
+        gap_explanation = gap_text.strip()
 
-        # NEW: Prepare gap explanation (pass None if not included or empty)
-        gap_explanation = None
-        if include_gap and gap_text and gap_text.strip():
-            gap_explanation = gap_text.strip()
+    # Call adapter (no try/except needed - adapter handles all exceptions)
+    result_obj = generate_cover_letter_adapter(
+        resume_data, job_title, jd, company, info, job_change,
+        company_interest,
+        gap_explanation
+    )
 
-        # Generate cover letter
-        cover_letter_html = generate_cover_letter(
-            resume_data, job_title, jd, company, info, job_change,
-            company_interest,
-            gap_explanation
-        )
+    # Check for failure
+    if isinstance(result_obj, Failure):
+        error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
+        return error_output, ""
 
-        # Return JSON output and HTML state
-        return {
-            "status": "success",
-            "paragraphs": cover_letter_html.count("<p>"),
-            "preview": cover_letter_html[:200] + "..."
-        }, cover_letter_html
+    # Extract cover letter HTML from Success
+    cover_letter_html = result_obj.value
 
-    except Exception as e:
-        return {"error": str(e)}, ""
+    # Return JSON output and HTML state
+    return {
+        "status": "success",
+        "paragraphs": cover_letter_html.count("<p>"),
+        "preview": cover_letter_html[:200] + "..."
+    }, cover_letter_html
 
 
 def handle_cover_letter_preview_update(cover_letter_html):
@@ -420,28 +432,23 @@ def handle_get_suggestions(
     used_bullet_ids: set
 ):
     """
-    Generate intelligent replacement suggestions.
+    Generate intelligent replacement suggestions (UI handler).
 
     Returns:
         Tuple of UI component updates
     """
-    from app.bullet_intelligence import suggest_replacements
-    from ui.resume_helpers import extract_bullet_texts
+    from app.replacement_engine import get_replacement_suggestions
+    from app.exceptions import ValidationError
 
-    # Convert 1-based to 0-based
-    index = int(bullet_index) - 1
-
-    # Get active section
-    if section_name == "SPINS":
-        active_list = spins_list
-    elif section_name == "Programmer":
-        active_list = programmer_list
-    else:  # Analyst
-        active_list = analyst_list
-
-    # Validate index
-    if index < 0 or index >= len(active_list):
-        error_msg = f"❌ Invalid bullet index: {bullet_index}. Section has {len(active_list)} bullets."
+    # Call business logic
+    try:
+        result = get_replacement_suggestions(
+            section_name, bullet_index,
+            spins_list, programmer_list, analyst_list,
+            analyzed_bullets, jd_analysis, used_bullet_ids
+        )
+    except ValidationError as e:
+        error_msg = f"❌ {str(e)}"
         return (
             gr.Markdown(value="", visible=False),
             gr.Radio(choices=[], visible=False),
@@ -455,20 +462,9 @@ def handle_get_suggestions(
             gr.Markdown(value=error_msg, visible=True)
         )
 
-    # Get removed bullet
-    removed_bullet = active_list[index]
-    removed_text = removed_bullet.get("text", str(removed_bullet))
-
-    # Get top 5 suggestions
-    suggestions = suggest_replacements(
-        removed_bullet=removed_bullet,
-        all_bullets=analyzed_bullets,
-        active_bullet_ids=used_bullet_ids,
-        active_bullets=active_list,
-        jd_analysis=jd_analysis
-    )
-
     # Format removed bullet display
+    removed_bullet = result["removed_bullet"]
+    removed_text = removed_bullet.get("text", str(removed_bullet))
     removed_display = f"""#### Replacing Bullet #{bullet_index}:
 **Original:** {removed_text[:150]}{"..." if len(removed_text) > 150 else ""}
 
@@ -476,20 +472,17 @@ def handle_get_suggestions(
 """
 
     # Format suggestions for radio
+    suggestions = result["suggestions"]
     choices = []
-    for i, sugg in enumerate(suggestions, 1):
+    for sugg in suggestions:
         bullet = sugg["bullet"]
         score = sugg["score"]
         text = bullet["text"]
-
-        # Truncate for display
         display_text = text[:100] + "..." if len(text) > 100 else text
-
-        # Format: "⭐ 8.5 | [frontend] Bullet text..."
         choice_label = f"⭐ {score:.1f} | [{bullet['category']}] {display_text}"
         choices.append((choice_label, bullet["bullet_id"]))
 
-    # Default explanation for first suggestion
+    # First suggestion explanation
     first_explanation = ""
     if suggestions:
         first_explanation = f"""#### Why This Suggestion?
@@ -502,23 +495,11 @@ def handle_get_suggestions(
 - **JD Score:** {suggestions[0]['bullet']['jd_score']}
 """
 
-    # Skills coverage check
+    # Skills coverage warning
     coverage_msg = ""
-    if suggestions:
-        # Check if top suggestion has high skill overlap with active bullets
-        top_bullet = suggestions[0]["bullet"]
-        active_keywords = set()
-        for b in active_list:
-            active_keywords.update(b.get("keywords", []))
-
-        top_keywords = set(top_bullet.get("keywords", []))
-        overlap = top_keywords & active_keywords
-
-        if len(overlap) >= 3:
-            coverage_msg = f"""⚠️ **Skills Coverage Warning**
-Top suggestion shares {len(overlap)} skills with existing bullets: {', '.join(list(overlap)[:4])}
-
-Consider lower-ranked suggestions for better skill diversity.
+    if result.get("skills_coverage_warning"):
+        coverage_msg = f"""⚠️ **Skills Coverage Warning**
+{result['skills_coverage_warning']}
 """
 
     return (
@@ -526,8 +507,8 @@ Consider lower-ranked suggestions for better skill diversity.
         gr.Radio(choices=choices, value=choices[0][1] if choices else None, visible=True),
         gr.Markdown(value=first_explanation, visible=True),
         gr.Markdown(value=coverage_msg, visible=True) if coverage_msg else gr.Markdown(value="", visible=False),
-        section_name,
-        index,
+        result["target_section"],
+        result["target_index"],
         removed_bullet,
         gr.Button(visible=True),
         gr.Button(visible=True),
@@ -540,21 +521,19 @@ def handle_suggestion_selected(
     analyzed_bullets: list,
     jd_analysis: dict
 ):
-    """Update explanation when user selects a different suggestion."""
-    from app.bullet_intelligence import generate_explanation
+    """Update explanation when user selects a different suggestion (UI handler)."""
+    from app.replacement_engine import get_suggestion_explanation
 
-    # Find selected bullet
-    selected = None
-    for bullet in analyzed_bullets:
-        if bullet["bullet_id"] == selected_bullet_id:
-            selected = bullet
-            break
+    # Call business logic
+    result = get_suggestion_explanation(selected_bullet_id, analyzed_bullets, jd_analysis)
 
-    if not selected:
+    if not result["success"]:
         return ""
 
+    # Format explanation for UI
+    selected = result["bullet"]
     explanation = f"""#### Why This Suggestion?
-{generate_explanation(selected, {}, jd_analysis)}
+{result['explanation']}
 
 **Details:**
 - **Category:** {selected['category']}
@@ -576,53 +555,26 @@ def handle_confirm_replacement(
     used_bullet_ids: set
 ):
     """
-    Execute the intelligent bullet replacement.
+    Execute the intelligent bullet replacement (UI handler).
 
     Returns updated state and UI elements.
     """
-    from ui.resume_helpers import replace_bullet_in_list, extract_bullet_texts
+    from app.replacement_engine import execute_replacement
+    from app.exceptions import ValidationError
 
-    # Find replacement bullet by ID
-    replacement_bullet = None
-    for bullet in analyzed_bullets:
-        if bullet["bullet_id"] == selected_bullet_id:
-            replacement_bullet = bullet
-            break
-
-    if not replacement_bullet:
-        error_msg = "❌ Error: Could not find selected bullet."
+    # Call business logic
+    try:
+        result = execute_replacement(
+            target_section, target_index, selected_bullet_id,
+            spins_list, programmer_list, analyst_list,
+            analyzed_bullets, used_bullet_ids
+        )
+    except ValidationError as e:
+        error_msg = f"❌ Error: {str(e)}"
         return tuple([gr.Markdown(value=error_msg, visible=True)] + [gr.update()] * 13)
 
-    # Update appropriate section
-    if target_section == "SPINS":
-        old_bullet = spins_list[target_index]
-        spins_list = replace_bullet_in_list(spins_list.copy(), target_index, replacement_bullet)
-        updated_spins = spins_list
-        updated_programmer = programmer_list
-        updated_analyst = analyst_list
-    elif target_section == "Programmer":
-        old_bullet = programmer_list[target_index]
-        programmer_list = replace_bullet_in_list(programmer_list.copy(), target_index, replacement_bullet)
-        updated_spins = spins_list
-        updated_programmer = programmer_list
-        updated_analyst = analyst_list
-    else:  # Analyst
-        old_bullet = analyst_list[target_index]
-        analyst_list = replace_bullet_in_list(analyst_list.copy(), target_index, replacement_bullet)
-        updated_spins = spins_list
-        updated_programmer = programmer_list
-        updated_analyst = analyst_list
-
-    # Update used bullet IDs
-    used_bullet_ids = used_bullet_ids.copy()
-    used_bullet_ids.discard(old_bullet.get("bullet_id", ""))
-    used_bullet_ids.add(replacement_bullet["bullet_id"])
-
-    # Convert to text
-    spins_text = bullets_to_text(extract_bullet_texts(updated_spins))
-    programmer_text = bullets_to_text(extract_bullet_texts(updated_programmer))
-    analyst_text = bullets_to_text(extract_bullet_texts(updated_analyst))
-
+    # Format success message for UI
+    replacement_bullet = result["replacement_bullet"]
     success_msg = f"""✓ **Replacement Complete!**
 Bullet #{target_index + 1} in {target_section} updated.
 
@@ -631,13 +583,13 @@ Bullet #{target_index + 1} in {target_section} updated.
 
     return (
         gr.Markdown(value=success_msg, visible=True),
-        spins_text,
-        programmer_text,
-        analyst_text,
-        updated_spins,
-        updated_programmer,
-        updated_analyst,
-        used_bullet_ids,
+        result["spins_text"],
+        result["programmer_text"],
+        result["analyst_text"],
+        result["updated_spins"],
+        result["updated_programmer"],
+        result["updated_analyst"],
+        result["updated_used_ids"],
         gr.Markdown(value="", visible=False),
         gr.Radio(choices=[], visible=False),
         gr.Markdown(value="", visible=False),
