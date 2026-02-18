@@ -8,13 +8,83 @@ bullet library JSON files. Previously in ui/bullet_editor_helpers.py.
 import json
 import re
 from pathlib import Path
-from typing import Tuple
+from typing import Any, List, Tuple
 from app.text_processors import text_to_bullets, bullets_to_text
 from app.validators import validate_role_name, validate_bullets_text
 from app.exceptions import FileOperationError, ValidationError
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+VALID_SECTIONS = {"spins", "programmer", "analyst"}
+
+
+def validate_bullet_item(item: Any, index: int) -> List[str]:
+    """
+    Validate a single bullet item from a bullet library.
+
+    Args:
+        item: The bullet item to validate
+        index: Zero-based index in the bullets list (for error messages)
+
+    Returns:
+        List of error strings (empty if valid)
+    """
+    errors = []
+
+    if isinstance(item, str):
+        errors.append(f"Bullet {index}: legacy string format not allowed; use {{text, section}} dict")
+        return errors
+
+    if not isinstance(item, dict):
+        errors.append(f"Bullet {index}: expected dict, got {type(item).__name__}")
+        return errors
+
+    text = item.get("text", "")
+    if not text or not isinstance(text, str) or not text.strip():
+        errors.append(f"Bullet {index}: missing or empty 'text' field")
+
+    section = item.get("section")
+    if section is None:
+        errors.append(f"Bullet {index}: missing 'section' field")
+    elif section not in VALID_SECTIONS:
+        errors.append(
+            f"Bullet {index}: invalid section '{section}'; must be one of {sorted(VALID_SECTIONS)}"
+        )
+
+    return errors
+
+
+def validate_bullet_library(bullet_data: dict) -> Tuple[bool, List[str]]:
+    """
+    Validate a bullet library dict loaded from JSON.
+
+    Args:
+        bullet_data: Dict loaded from bullet library JSON file
+
+    Returns:
+        Tuple of (is_valid, error_messages)
+    """
+    all_errors: List[str] = []
+
+    if not isinstance(bullet_data, dict) or "bullets" not in bullet_data:
+        return False, ["Bullet library must be a dict with a 'bullets' key"]
+
+    bullets = bullet_data["bullets"]
+    if not isinstance(bullets, list):
+        return False, ["'bullets' must be a list"]
+
+    if not bullets:
+        return False, ["'bullets' list is empty"]
+
+    for i, item in enumerate(bullets):
+        item_errors = validate_bullet_item(item, i)
+        all_errors.extend(item_errors)
+        if len(all_errors) >= 10:
+            all_errors.append(f"... (stopping after 10 errors)")
+            break
+
+    return len(all_errors) == 0, all_errors
 
 
 def load_bullet_library(file_path: str) -> Tuple[str, str, str]:
@@ -40,12 +110,15 @@ def load_bullet_library(file_path: str) -> Tuple[str, str, str]:
         role = data.get("role", "")
         bullets = data.get("bullets", [])
 
+        # Support new {text, section} format — extract text for display
+        bullet_texts = [b["text"] if isinstance(b, dict) else b for b in bullets]
+
         # Convert to text
-        bullets_text = bullets_to_text(bullets)
+        bullets_text = bullets_to_text(bullet_texts)
 
         bullet_count = len(text_to_bullets(bullets_text))
         logger.info(f"Loaded {bullet_count} bullets from {path.name}")
-        return role, bullets_text, f"✓ Loaded {bullet_count} bullets from {path.name}"
+        return role, bullets_text, f"Loaded {bullet_count} bullets from {path.name}"
 
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in {file_path}: {e}")

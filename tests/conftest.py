@@ -58,51 +58,6 @@ def sample_company_info():
     }
 
 
-# ============================================================================
-# Assignment Fixtures
-# ============================================================================
-
-@pytest.fixture
-def make_assignments():
-    """Factory fixture to create assignment lists."""
-    def _make(spins=0, programmer=0, analyst=0, bullets=None):
-        """
-        Create a list of assignment dicts.
-
-        Args:
-            spins: Number of spins bullets
-            programmer: Number of programmer bullets
-            analyst: Number of analyst bullets
-            bullets: Optional list of bullet texts (auto-generated if None)
-
-        Returns:
-            List of assignment dicts
-        """
-        assignments = []
-        bullet_counter = 0
-
-        for section, count in [("spins", spins), ("programmer", programmer), ("analyst", analyst)]:
-            for i in range(count):
-                if bullets and bullet_counter < len(bullets):
-                    bullet_text = bullets[bullet_counter]
-                else:
-                    bullet_text = f"Bullet {bullet_counter + 1} for {section}"
-                assignments.append({
-                    "bullet": bullet_text,
-                    "section": section
-                })
-                bullet_counter += 1
-
-        return assignments
-
-    return _make
-
-
-@pytest.fixture
-def valid_assignments(make_assignments):
-    """Pre-made valid assignments with balanced distribution."""
-    return make_assignments(spins=10, programmer=10, analyst=5)
-
 
 # ============================================================================
 # Mock OpenAI Client Fixtures
@@ -162,16 +117,6 @@ def sample_resume_data():
         ]
     }
 
-
-# ============================================================================
-# Deterministic Random Fixture
-# ============================================================================
-
-@pytest.fixture
-def fixed_random(mocker):
-    """Fix random.randint to return deterministic value."""
-    mocker.patch("app.resume_engine.random.randint", return_value=30)
-    return 30
 
 
 # ============================================================================

@@ -1,10 +1,10 @@
 import json
 import os
-import random
 
-from app.types import ResumeData
+from typing import List, Dict, Tuple
+from app.types import ResumeData, BulletLibraryItem
 from app.config import config
-from app.distribution_engine import classify_bullets, rebalance
+from app.distribution_engine import group_by_section
 from app.openai_client import call_openai_json
 from app.prompts import bullet_selection_prompt, rewrite_prompt
 from app.bullet_intelligence import (
@@ -12,10 +12,66 @@ from app.bullet_intelligence import (
     analyze_bullets,
     score_bullets_against_jd
 )
+from app.bullet_library_manager import validate_bullet_library
 from app.exceptions import FileOperationError, ValidationError, DataProcessingError
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+def select_bullets_by_section(
+    scored: List[dict],
+    bullet_items: List[BulletLibraryItem]
+) -> List[BulletLibraryItem]:
+    """
+    Select top-scoring bullets per section based on exact configured counts.
+
+    Args:
+        scored: List of {"bullet": text, "score": N} from LLM scoring
+        bullet_items: List of BulletLibraryItems with text and section fields
+
+    Returns:
+        List of selected BulletLibraryItems (spins_count + programmer_count + analyst_count)
+
+    Raises:
+        ValidationError: If any section has insufficient bullets in the library
+    """
+    # Build score lookup
+    score_map: Dict[str, float] = {item["bullet"]: item["score"] for item in scored}
+
+    # Group library items by section with their scores
+    by_section: Dict[str, List[Tuple[float, BulletLibraryItem]]] = {
+        "spins": [], "programmer": [], "analyst": []
+    }
+    for item in bullet_items:
+        section = item["section"]
+        if section in by_section:
+            score = score_map.get(item["text"], 0.0)
+            by_section[section].append((score, item))
+
+    counts = {
+        "spins": config.business.spins_count,
+        "programmer": config.business.programmer_count,
+        "analyst": config.business.analyst_count,
+    }
+
+    selected: List[BulletLibraryItem] = []
+    for section_name, count in counts.items():
+        items = by_section[section_name]
+        if len(items) < count:
+            raise ValidationError(
+                f"Section '{section_name}' has {len(items)} bullets in library, "
+                f"needs {count}. Add more '{section_name}' bullets to the library."
+            )
+        # Sort by score descending and take top count
+        items.sort(key=lambda x: x[0], reverse=True)
+        selected.extend(item for _, item in items[:count])
+
+    logger.info(
+        f"Selected {len(selected)} bullets: "
+        f"{counts['spins']} spins, {counts['programmer']} programmer, {counts['analyst']} analyst"
+    )
+    return selected
 
 
 def generate_resume(job_description, company_name,
@@ -36,7 +92,7 @@ def generate_resume(job_description, company_name,
 
     Raises:
         FileOperationError: If bullet file is missing or invalid
-        ValidationError: If bullet data is malformed
+        ValidationError: If bullet data is malformed or has insufficient bullets
         DataProcessingError: If processing fails
     """
     logger.info(f"Generating resume for {company_name} using bullet file: {bullet_file}")
@@ -55,23 +111,22 @@ def generate_resume(job_description, company_name,
         logger.error(f"Error reading bullet file {bullet_file}: {e}")
         raise FileOperationError(f"Error reading bullet file: {e}")
 
-    if "bullets" not in bullet_data:
-        logger.error(f"Bullet file missing 'bullets' key: {bullet_file}")
-        raise ValidationError("Bullet file must contain 'bullets' key")
+    # Validate new format
+    is_valid, validation_errors = validate_bullet_library(bullet_data)
+    if not is_valid:
+        logger.error(f"Bullet library validation failed: {validation_errors}")
+        raise ValidationError("Bullet library validation failed:\n" + "\n".join(validation_errors))
 
-    all_bullets = bullet_data["bullets"]
-    if not all_bullets:
-        logger.error(f"Bullet file contains empty bullets list: {bullet_file}")
-        raise ValidationError("Bullet file must contain at least one bullet")
-
-    role = bullet_data.get("role", "General")  # Default to "General" if role not present
-    logger.info(f"Loaded {len(all_bullets)} bullets for role: {role}")
+    bullet_items: List[BulletLibraryItem] = bullet_data["bullets"]
+    role = bullet_data.get("role", "General")
+    all_bullet_texts = [item["text"] for item in bullet_items]
+    logger.info(f"Loaded {len(bullet_items)} bullets for role: {role}")
 
     # 1. Score all bullets
     logger.debug("Scoring bullets against job description")
     try:
         scored = call_openai_json(
-            bullet_selection_prompt(job_description, all_bullets),
+            bullet_selection_prompt(job_description, all_bullet_texts),
             timeout=config.llm.scoring_timeout
         )["scored_bullets"]
         logger.info(f"Scored {len(scored)} bullets")
@@ -79,24 +134,21 @@ def generate_resume(job_description, company_name,
         logger.error(f"LLM response missing expected key: {e}")
         raise DataProcessingError(f"Invalid LLM response structure: missing {e}")
 
-    # 2. Sort by score (deterministic)
-    sorted_bullets = sorted(scored, key=lambda x: x["score"], reverse=True)
+    # 2. Section-aware selection
+    selected_items = select_bullets_by_section(scored, bullet_items)
+    selected_texts = [item["text"] for item in selected_items]
 
-    # 3. Select top bullets (range from config)
-    count = random.randint(config.business.bullet_selection_min, config.business.bullet_selection_max)
-    selected = [item["bullet"] for item in sorted_bullets[:count]]
-
-    # 4. Rewrite selected bullets for clarity and alignment
-    logger.debug(f"Rewriting {len(selected)} selected bullets")
+    # 3. Rewrite selected bullets
+    logger.debug(f"Rewriting {len(selected_texts)} selected bullets")
     try:
         rewritten = call_openai_json(
             rewrite_prompt(
                 job_description,
                 company_name,
                 company_info,
-                selected,
+                selected_texts,
                 job_change,
-                role  # Pass role for strategy selection
+                role
             ),
             temperature=config.llm.temperature_creative,
             timeout=config.llm.rewriting_timeout
@@ -107,41 +159,31 @@ def generate_resume(job_description, company_name,
         logger.error(f"LLM response missing expected key: {e}")
         raise DataProcessingError(f"Invalid LLM response structure: missing {e}")
 
-    # === NEW: INTELLIGENT ANALYSIS ===
-
-    # Step 1: Analyze job description (1 LLM call)
+    # 4. Analyze bullets
     logger.debug("Analyzing job description")
     jd_analysis = get_cached_jd_analysis(job_description)
 
-    # Step 2: Analyze all rewritten bullets (1 LLM call for batch)
     logger.debug("Analyzing rewritten bullets")
     analyzed_bullets = analyze_bullets(rewritten_bullets)
 
-    # Step 3: Score bullets against JD (rule-based, no LLM)
     logger.debug("Scoring bullets against job description")
     analyzed_bullets = score_bullets_against_jd(analyzed_bullets, jd_analysis)
 
-    # 5. Classify bullets into sections
-    logger.debug("Classifying bullets into sections")
-    assignments = classify_bullets(rewritten_bullets)
+    # 5. Propagate section designations from library items to analyzed bullets
+    for bullet_dict, selected_item in zip(analyzed_bullets, selected_items):
+        bullet_dict["section"] = selected_item["section"]
 
-    # Add classification to analyzed bullets
-    assignment_map = {a["bullet"]: a["section"] for a in assignments}
-    for bullet_data in analyzed_bullets:
-        bullet_data["section"] = assignment_map.get(bullet_data["text"], "analyst")
+    sections = group_by_section(analyzed_bullets)
+    logger.info(
+        f"Final sections: spins={len(sections['spins'])}, "
+        f"programmer={len(sections['programmer'])}, analyst={len(sections['analyst'])}"
+    )
 
-    # 6. Rebalance sections (enforce 10-12 per primary section)
-    logger.debug("Rebalancing sections")
-    sections = rebalance(assignments)
-    logger.info(f"Final sections: spins={len(sections['spins'])}, programmer={len(sections['programmer'])}, analyst={len(sections['analyst'])}")
-
-    # === NEW: ENHANCED RETURN WITH INTELLIGENCE ===
-
-    # Identify which bullets are actually used in final sections
+    # Identify which bullets are actually used
     used_texts = set(sections["spins"] + sections["programmer"] + sections["analyst"])
     used_bullet_ids = {
         b["bullet_id"] for b in analyzed_bullets
-        if b["text"] in used_texts
+        if b.get("text") in used_texts
     }
 
     result = {
@@ -150,9 +192,9 @@ def generate_resume(job_description, company_name,
         "programmer": sections["programmer"],
         "analyst": sections["analyst"],
         "metadata": {
-            "analyzed_bullets": analyzed_bullets,  # Full intelligence per bullet
-            "jd_analysis": jd_analysis,            # JD keywords and skills
-            "used_bullet_ids": used_bullet_ids     # Track which bullets are active
+            "analyzed_bullets": analyzed_bullets,
+            "jd_analysis": jd_analysis,
+            "used_bullet_ids": used_bullet_ids
         }
     }
 

@@ -9,53 +9,29 @@ Tests generate_resume pipeline with mocked OpenAI calls:
 import json
 import pytest
 from app.resume_engine import generate_resume
-from app.exceptions import FileOperationError
+from app.exceptions import FileOperationError, ValidationError
 
 
 pytestmark = pytest.mark.integration
+
+
+def make_bullet_item(text, section):
+    return {"text": text, "section": section}
 
 
 class TestGenerateResume:
     """Tests for generate_resume function."""
 
     @pytest.fixture
-    def mock_scored_bullets(self, sample_bullets):
-        """Mock response for bullet scoring."""
-        return {
-            "scored_bullets": [
-                {"bullet": bullet, "score": 5 - i}
-                for i, bullet in enumerate(sample_bullets)
-            ]
-        }
-
-    @pytest.fixture
-    def mock_rewritten_response(self, sample_bullets):
-        """Mock response for bullet rewriting."""
-        return {
-            "rewritten_bullets": [f"Rewritten: {b}" for b in sample_bullets],
-            "summary": "Experienced professional with strong technical skills."
-        }
-
-    @pytest.fixture
-    def mock_classification_response(self, sample_bullets):
-        """Mock response for bullet classification."""
-        rewritten = [f"Rewritten: {b}" for b in sample_bullets]
-        # Distribute to meet minimum requirements
-        return {
-            "assignments": [
-                {"bullet": rewritten[0], "section": "spins"},
-                {"bullet": rewritten[1], "section": "programmer"},
-                {"bullet": rewritten[2], "section": "analyst"},
-                {"bullet": rewritten[3], "section": "spins"},
-                {"bullet": rewritten[4], "section": "programmer"},
-            ]
-        }
-
-    @pytest.fixture
     def extended_bullet_file(self, tmp_path):
-        """Create bullet file with enough bullets for full pipeline."""
-        # Need enough bullets to meet minimums (10 spins + 10 programmer)
-        bullets = [f"Bullet {i} for resume testing" for i in range(35)]
+        """Create bullet file with enough bullets for full pipeline (new format)."""
+        bullets = []
+        for i in range(15):
+            bullets.append(make_bullet_item(f"Spins bullet {i}", "spins"))
+        for i in range(15):
+            bullets.append(make_bullet_item(f"Programmer bullet {i}", "programmer"))
+        for i in range(12):
+            bullets.append(make_bullet_item(f"Analyst bullet {i}", "analyst"))
         bullet_file = tmp_path / "bullets.json"
         bullet_file.write_text(json.dumps({
             "role": "Help Desk",
@@ -64,39 +40,27 @@ class TestGenerateResume:
         return str(bullet_file)
 
     @pytest.fixture
-    def mock_extended_responses(self):
-        """Create mock responses for full pipeline with enough bullets."""
-        def create_mocks(bullets):
-            # Scoring response - give all bullets high scores
-            scored = {
-                "scored_bullets": [
-                    {"bullet": b, "score": 5} for b in bullets
-                ]
-            }
+    def mock_responses(self, extended_bullet_file):
+        """Create mock LLM responses for the full pipeline."""
+        with open(extended_bullet_file) as f:
+            data = json.load(f)
+        bullet_items = data["bullets"]
+        all_texts = [b["text"] for b in bullet_items]
 
-            # Rewrite response
-            rewritten_bullets = [f"Rewritten: {b}" for b in bullets[:30]]
-            rewritten = {
-                "rewritten_bullets": rewritten_bullets,
-                "summary": "Professional summary based on experience."
-            }
+        scored = {
+            "scored_bullets": [
+                {"bullet": text, "score": 5} for text in all_texts
+            ]
+        }
 
-            # Classification - distribute 12 to each primary, rest to analyst
-            assignments = []
-            for i, b in enumerate(rewritten_bullets):
-                if i < 12:
-                    section = "spins"
-                elif i < 24:
-                    section = "programmer"
-                else:
-                    section = "analyst"
-                assignments.append({"bullet": b, "section": section})
+        # select_bullets_by_section selects 12+12+10=34 bullets
+        total = 12 + 12 + 10
+        rewritten = {
+            "rewritten_bullets": [f"Rewritten bullet {i}" for i in range(total)],
+            "summary": "Professional summary based on experience."
+        }
 
-            classification = {"assignments": assignments}
-
-            return scored, rewritten, classification
-
-        return create_mocks
+        return scored, rewritten
 
     def test_raises_on_missing_file(self, sample_job_description):
         """Should raise FileOperationError when bullet file doesn't exist."""
@@ -109,22 +73,42 @@ class TestGenerateResume:
                 False
             )
 
+    def test_raises_on_invalid_bullet_library_format(self, tmp_path, sample_job_description):
+        """Should raise ValidationError when bullet file uses legacy string format."""
+        bullet_file = tmp_path / "legacy.json"
+        bullet_file.write_text(json.dumps({
+            "role": "Test",
+            "bullets": ["plain string bullet"]
+        }))
+
+        with pytest.raises(ValidationError, match="validation failed"):
+            generate_resume(
+                sample_job_description,
+                "TechCorp",
+                "A tech company",
+                str(bullet_file),
+                False
+            )
+
     def test_returns_dict_with_required_keys(
-        self, mocker, extended_bullet_file, sample_job_description,
-        mock_extended_responses, fixed_random
+        self, mocker, extended_bullet_file, sample_job_description, mock_responses
     ):
         """Should return dict with summary, spins, programmer, analyst."""
-        # Load bullets to create appropriate mocks
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
+        scored, rewritten = mock_responses
 
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
 
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
+        # Mock analysis calls to avoid LLM calls
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten bullet {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
 
         result = generate_resume(
             sample_job_description,
@@ -141,20 +125,23 @@ class TestGenerateResume:
         assert "analyst" in result
 
     def test_summary_is_string(
-        self, mocker, extended_bullet_file, sample_job_description,
-        mock_extended_responses, fixed_random
+        self, mocker, extended_bullet_file, sample_job_description, mock_responses
     ):
         """Should return summary as a string."""
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
+        scored, rewritten = mock_responses
 
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
 
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten bullet {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
 
         result = generate_resume(
             sample_job_description,
@@ -168,20 +155,23 @@ class TestGenerateResume:
         assert len(result["summary"]) > 0
 
     def test_sections_contain_lists(
-        self, mocker, extended_bullet_file, sample_job_description,
-        mock_extended_responses, fixed_random
+        self, mocker, extended_bullet_file, sample_job_description, mock_responses
     ):
         """Should return sections as plain lists."""
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
+        scored, rewritten = mock_responses
 
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
 
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten bullet {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
 
         result = generate_resume(
             sample_job_description,
@@ -191,28 +181,31 @@ class TestGenerateResume:
             False
         )
 
-        # Each section should be a list
         assert isinstance(result["spins"], list)
         assert isinstance(result["programmer"], list)
         assert isinstance(result["analyst"], list)
         assert len(result["spins"]) > 0
         assert len(result["programmer"]) > 0
+        assert len(result["analyst"]) > 0
 
     def test_calls_openai_for_scoring(
-        self, mocker, extended_bullet_file, sample_job_description,
-        mock_extended_responses, fixed_random
+        self, mocker, extended_bullet_file, sample_job_description, mock_responses
     ):
         """Should call OpenAI to score bullets."""
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
+        scored, rewritten = mock_responses
 
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
 
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten bullet {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
 
         generate_resume(
             sample_job_description,
@@ -222,26 +215,28 @@ class TestGenerateResume:
             False
         )
 
-        # First call should be for scoring
         first_call = mock_call.call_args_list[0]
         messages = first_call[0][0]
         assert "score" in str(messages).lower()
 
     def test_calls_openai_for_rewriting(
-        self, mocker, extended_bullet_file, sample_job_description,
-        mock_extended_responses, fixed_random
+        self, mocker, extended_bullet_file, sample_job_description, mock_responses
     ):
-        """Should call OpenAI to rewrite bullets."""
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
+        """Should call OpenAI to rewrite bullets with creative temperature."""
+        scored, rewritten = mock_responses
 
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
 
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten bullet {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
 
         generate_resume(
             sample_job_description,
@@ -251,104 +246,44 @@ class TestGenerateResume:
             False
         )
 
-        # Second call should be for rewriting with temperature=0.7
         second_call = mock_call.call_args_list[1]
         assert second_call.kwargs.get("temperature") == 0.7
 
-    def test_selects_top_bullets_by_score(
-        self, mocker, extended_bullet_file, sample_job_description, fixed_random
+    def test_extracts_role_from_bullet_file(
+        self, mocker, tmp_path, sample_job_description
     ):
-        """Should select top-scored bullets for rewriting."""
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
+        """Should extract role from bullet file and pass to rewrite_prompt."""
+        bullets = []
+        for i in range(15):
+            bullets.append(make_bullet_item(f"Spins bullet {i}", "spins"))
+        for i in range(15):
+            bullets.append(make_bullet_item(f"Programmer bullet {i}", "programmer"))
+        for i in range(12):
+            bullets.append(make_bullet_item(f"Analyst bullet {i}", "analyst"))
 
-        # Create scored bullets with varying scores
-        scored = {
-            "scored_bullets": [
-                {"bullet": b, "score": 5 if i < 30 else 1}
-                for i, b in enumerate(bullets)
-            ]
-        }
+        bullet_file = tmp_path / "bullets_with_role.json"
+        bullet_file.write_text(json.dumps({"role": "Programmer", "bullets": bullets}))
 
-        rewritten_bullets = [f"Rewritten: {bullets[i]}" for i in range(30)]
+        all_texts = [b["text"] for b in bullets]
+        scored = {"scored_bullets": [{"bullet": t, "score": 5} for t in all_texts]}
         rewritten = {
-            "rewritten_bullets": rewritten_bullets,
+            "rewritten_bullets": [f"Rewritten {i}" for i in range(34)],
             "summary": "Test summary"
         }
 
-        # Classification matching rewritten bullets
-        assignments = []
-        for i, b in enumerate(rewritten_bullets):
-            section = "spins" if i < 12 else ("programmer" if i < 24 else "analyst")
-            assignments.append({"bullet": b, "section": section})
-
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
 
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = assignments
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
 
-        result = generate_resume(
-            sample_job_description,
-            "TechCorp",
-            "A tech company",
-            extended_bullet_file,
-            False
-        )
-
-        # Result should contain rewritten bullets (now as list)
-        assert any("Rewritten:" in bullet for bullet in result["spins"])
-
-    def test_passes_job_change_to_rewrite(
-        self, mocker, extended_bullet_file, sample_job_description,
-        mock_extended_responses, fixed_random
-    ):
-        """Should pass job_change context to rewrite prompt."""
-        with open(extended_bullet_file) as f:
-            bullets = json.load(f)["bullets"]
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
-
-        mock_call = mocker.patch("app.resume_engine.call_openai_json")
-        mock_call.side_effect = [scored, rewritten]
-
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
-
-        generate_resume(
-            sample_job_description,
-            "TechCorp",
-            "A tech company",
-            extended_bullet_file,
-            True  # job_change=True
-        )
-
-        # Second call (rewrite) should include job_change context
-        second_call = mock_call.call_args_list[1]
-        messages = second_call[0][0]
-        # The prompt should contain the job_change value
-        assert "True" in str(messages)
-
-    def test_extracts_role_from_bullet_file(
-        self, mocker, tmp_path, sample_job_description,
-        mock_extended_responses, fixed_random
-    ):
-        """Should extract role from bullet file and pass to rewrite_prompt."""
-        # Create bullet file with specific role
-        bullets = [f"Bullet {i}" for i in range(35)]
-        bullet_file = tmp_path / "bullets_with_role.json"
-        bullet_file.write_text(json.dumps({
-            "role": "Programmer",
-            "bullets": bullets
-        }))
-
-        scored, rewritten, classification = mock_extended_responses(bullets)
-        mock_call = mocker.patch("app.resume_engine.call_openai_json")
-        mock_call.side_effect = [scored, rewritten]
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
-
-        # Mock rewrite_prompt to inspect parameters
         mock_rewrite = mocker.patch("app.resume_engine.rewrite_prompt")
         mock_rewrite.return_value = [{"role": "user", "content": "test"}]
 
@@ -360,30 +295,45 @@ class TestGenerateResume:
             False
         )
 
-        # Verify rewrite_prompt was called with role="Programmer"
         assert mock_rewrite.called
         call_args = mock_rewrite.call_args
-        # Last positional argument should be the role
         assert call_args[0][5] == "Programmer"
 
     def test_defaults_to_general_when_role_missing(
-        self, mocker, tmp_path, sample_job_description,
-        mock_extended_responses, fixed_random
+        self, mocker, tmp_path, sample_job_description
     ):
         """Should default to 'General' role when role field is missing."""
-        bullets = [f"Bullet {i}" for i in range(35)]
-        bullet_file = tmp_path / "bullets_no_role.json"
-        bullet_file.write_text(json.dumps({
-            "bullets": bullets  # No "role" field
-        }))
+        bullets = []
+        for i in range(15):
+            bullets.append(make_bullet_item(f"Spins bullet {i}", "spins"))
+        for i in range(15):
+            bullets.append(make_bullet_item(f"Programmer bullet {i}", "programmer"))
+        for i in range(12):
+            bullets.append(make_bullet_item(f"Analyst bullet {i}", "analyst"))
 
-        scored, rewritten, classification = mock_extended_responses(bullets)
+        bullet_file = tmp_path / "bullets_no_role.json"
+        bullet_file.write_text(json.dumps({"bullets": bullets}))
+
+        all_texts = [b["text"] for b in bullets]
+        scored = {"scored_bullets": [{"bullet": t, "score": 5} for t in all_texts]}
+        rewritten = {
+            "rewritten_bullets": [f"Rewritten {i}" for i in range(34)],
+            "summary": "Test summary"
+        }
+
         mock_call = mocker.patch("app.resume_engine.call_openai_json")
         mock_call.side_effect = [scored, rewritten]
-        mock_classify = mocker.patch("app.resume_engine.classify_bullets")
-        mock_classify.return_value = classification["assignments"]
 
-        # Mock rewrite_prompt to inspect parameters
+        mocker.patch("app.resume_engine.get_cached_jd_analysis", return_value={
+            "required_skills": [], "preferred_skills": [], "all_keywords": [], "job_categories": []
+        })
+        mocker.patch("app.resume_engine.analyze_bullets", return_value=[
+            {"bullet_id": f"bullet_{i:04d}", "text": f"Rewritten {i}",
+             "keywords": [], "category": "general", "has_impact": False}
+            for i in range(34)
+        ])
+        mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
+
         mock_rewrite = mocker.patch("app.resume_engine.rewrite_prompt")
         mock_rewrite.return_value = [{"role": "user", "content": "test"}]
 
@@ -395,6 +345,5 @@ class TestGenerateResume:
             False
         )
 
-        # Verify rewrite_prompt was called with role="General"
         call_args = mock_rewrite.call_args
         assert call_args[0][5] == "General"

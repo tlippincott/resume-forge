@@ -97,33 +97,9 @@ class BusinessRulesConfig(BaseModel):
     - How many bullets to select
     - Section size constraints
     """
-    bullet_selection_min: int = Field(
-        default=38,
-        ge=10,
-        le=100,
-        description="Minimum bullets to select from library"
-    )
-    bullet_selection_max: int = Field(
-        default=42,
-        ge=10,
-        le=100,
-        description="Maximum bullets to select from library"
-    )
-
-    # Section configuration (from distribution_engine.py)
-    spins_min: int = Field(default=10, ge=0, description="Min bullets for SPINS section")
-    spins_max: int = Field(default=12, ge=0, description="Max bullets for SPINS section")
-    programmer_min: int = Field(default=10, ge=0, description="Min bullets for Programmer section")
-    programmer_max: int = Field(default=12, ge=0, description="Max bullets for Programmer section")
-    analyst_min: int = Field(default=0, ge=0, description="Min bullets for Analyst section (overflow)")
-    analyst_max: Optional[int] = Field(default=None, description="Max bullets for Analyst section (None=unlimited)")
-
-    @validator("bullet_selection_max")
-    def max_must_be_greater_than_min(cls, v, values):
-        """Ensure max is greater than min."""
-        if "bullet_selection_min" in values and v < values["bullet_selection_min"]:
-            raise ValueError("bullet_selection_max must be >= bullet_selection_min")
-        return v
+    spins_count: int = Field(default=12, ge=1, description="Exact SPINS bullets per resume")
+    programmer_count: int = Field(default=12, ge=1, description="Exact Programmer bullets per resume")
+    analyst_count: int = Field(default=10, ge=1, description="Exact Analyst bullets per resume")
 
     class Config:
         env_prefix = "BUSINESS_"

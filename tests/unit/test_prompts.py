@@ -4,10 +4,9 @@ Unit tests for app/prompts.py
 Tests the pure prompt generation functions:
 - bullet_selection_prompt()
 - rewrite_prompt()
-- distribution_prompt()
 """
 import pytest
-from app.prompts import bullet_selection_prompt, rewrite_prompt, distribution_prompt
+from app.prompts import bullet_selection_prompt, rewrite_prompt
 
 
 pytestmark = pytest.mark.unit
@@ -155,56 +154,3 @@ class TestRewritePrompt:
         assert "VERIFICATION CHECKLIST" in content
 
 
-class TestDistributionPrompt:
-    """Tests for distribution_prompt function."""
-
-    def test_returns_list(self, sample_bullets):
-        """Should return a list of message dicts."""
-        result = distribution_prompt(sample_bullets)
-
-        assert isinstance(result, list)
-        assert len(result) == 1
-
-    def test_has_user_role(self, sample_bullets):
-        """Should have user role in the message."""
-        result = distribution_prompt(sample_bullets)
-
-        assert result[0]["role"] == "user"
-
-    def test_includes_bullets(self, sample_bullets):
-        """Should include bullets in content."""
-        result = distribution_prompt(sample_bullets)
-        content = result[0]["content"]
-
-        assert str(sample_bullets) in content
-        assert "BULLETS:" in content
-
-    def test_includes_section_names(self, sample_bullets):
-        """Should include all section names."""
-        result = distribution_prompt(sample_bullets)
-        content = result[0]["content"]
-
-        assert "spins" in content
-        assert "programmer" in content
-        assert "analyst" in content
-
-    def test_includes_assignments_schema(self, sample_bullets):
-        """Should include expected JSON schema for assignments."""
-        result = distribution_prompt(sample_bullets)
-        content = result[0]["content"]
-
-        assert "assignments" in content
-        assert '"bullet"' in content
-        assert '"section"' in content
-        assert "spins|programmer|analyst" in content
-
-    def test_includes_section_descriptions(self, sample_bullets):
-        """Should include descriptions of what each section is for."""
-        result = distribution_prompt(sample_bullets)
-        content = result[0]["content"]
-
-        # Check for section guidance
-        assert "SECTIONS:" in content
-        assert "end-user support" in content.lower() or "customer" in content.lower()
-        assert "automation" in content.lower() or "scripting" in content.lower()
-        assert "troubleshooting" in content.lower() or "analysis" in content.lower()

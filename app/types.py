@@ -40,11 +40,20 @@ class JDAnalysis(TypedDict):
     job_categories: List[str]
 
 
+class BulletLibraryItem(TypedDict):
+    """Single bullet from bullet library JSON. text + section both required."""
+    text: str
+    section: str  # "spins" | "programmer" | "analyst"
+
+
 class AnalyzedBullet(TypedDict, total=False):
     """
     Bullet with extracted intelligence and JD scoring.
 
     This is a progressive structure - fields are added in stages:
+
+    Stage 0 - Set before analysis (from library designation):
+        section: Which resume section this bullet belongs to
 
     Stage 1 - Added by analyze_bullets():
         bullet_id: Unique identifier for tracking (format: "bullet_0001")
@@ -60,6 +69,9 @@ class AnalyzedBullet(TypedDict, total=False):
 
     Note: total=False allows fields to be added progressively
     """
+    # Stage 0: Library designation (set before analysis)
+    section: str  # "spins" | "programmer" | "analyst"
+
     # Stage 1: Intelligence extraction
     bullet_id: str
     text: str
