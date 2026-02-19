@@ -19,7 +19,8 @@ from app.config.models import (
     LLMConfig,
     BusinessRulesConfig,
     ScoringConfig,
-    LoggingConfig
+    LoggingConfig,
+    OutputConfig
 )
 
 
@@ -46,6 +47,7 @@ class Config(BaseModel):
     business: BusinessRulesConfig
     scoring: ScoringConfig
     logging: LoggingConfig
+    output: OutputConfig
 
     @classmethod
     def load(cls) -> "Config":
@@ -103,12 +105,18 @@ class Config(BaseModel):
             file_level=os.getenv("LOG_FILE_LEVEL", "DEBUG")
         )
 
+        output = OutputConfig(
+            resume_pdf_name=os.getenv("OUTPUT_RESUME_PDF_NAME", "resume"),
+            cover_letter_pdf_name=os.getenv("OUTPUT_COVER_LETTER_PDF_NAME", "cover_letter"),
+        )
+
         return cls(
             api=api,
             llm=llm,
             business=business,
             scoring=scoring,
-            logging=logging
+            logging=logging,
+            output=output
         )
 
 

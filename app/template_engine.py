@@ -2,7 +2,7 @@
 Template loading and rendering functions.
 
 This module contains business logic for loading HTML templates and
-substituting placeholders. Previously in ui/resume_helpers.py.
+substituting placeholders.
 """
 
 import html

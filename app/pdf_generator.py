@@ -6,10 +6,10 @@ Previously in ui/resume_helpers.py.
 """
 
 from pathlib import Path
-from datetime import datetime
 from app.render import render_html_to_pdf
 from app.exceptions import FileOperationError
 from app.logging_config import get_logger
+from app.config import config
 
 logger = get_logger(__name__)
 
@@ -27,12 +27,10 @@ def generate_pdf_file(html_content: str) -> str:
     Raises:
         FileOperationError: If PDF generation fails
     """
-    # Create timestamp filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"resume_{timestamp}.pdf"
+    filename = f"{config.output.resume_pdf_name}.pdf"
 
     # Ensure output directory exists
-    output_dir = Path(__file__).parent.parent / "output"
+    output_dir = Path(__file__).parent.parent / "output" / "resumes"
     try:
         output_dir.mkdir(exist_ok=True)
     except OSError as e:
@@ -67,12 +65,10 @@ def generate_cover_letter_pdf_file(html_content: str) -> str:
     Raises:
         FileOperationError: If PDF generation fails
     """
-    # Create timestamp filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"cover_letter_{timestamp}.pdf"
+    filename = f"{config.output.cover_letter_pdf_name}.pdf"
 
     # Ensure output directory exists
-    output_dir = Path(__file__).parent.parent / "output"
+    output_dir = Path(__file__).parent.parent / "output" / "cover_letters"
     try:
         output_dir.mkdir(exist_ok=True)
     except OSError as e:

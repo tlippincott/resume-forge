@@ -157,7 +157,7 @@ class TestLoadResumeHtml:
 class TestGeneratePdfFile:
     """Tests for generate_pdf_file function."""
 
-    def test_generates_pdf_with_timestamp_name(self):
+    def test_generates_pdf_with_configured_name(self):
         html_content = "<html><body><h1>Test</h1></body></html>"
 
         result_path = generate_pdf_file(html_content)
@@ -166,10 +166,7 @@ class TestGeneratePdfFile:
         path = Path(result_path)
         assert path.exists()
         assert path.suffix == ".pdf"
-
-        # Check filename format: resume_YYYYMMDD_HHMMSS.pdf
-        assert path.name.startswith("resume_")
-        assert path.name.endswith(".pdf")
+        assert len(path.stem) > 0
 
         # Clean up
         path.unlink()

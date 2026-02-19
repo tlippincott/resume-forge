@@ -1,9 +1,7 @@
 """
 Pydantic configuration models for Resume Forge.
 
-All configuration values are defined here with validation, defaults,
-and documentation. This replaces 25+ hardcoded values scattered across
-11+ files with centralized, validated configuration.
+All configuration values are defined here with validation, defaults, and documentation.
 
 Why Pydantic:
 - Built-in .env file loading
@@ -13,7 +11,7 @@ Why Pydantic:
 - Field validators for complex rules
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 
@@ -173,8 +171,9 @@ class LoggingConfig(BaseModel):
         description="File handler log level"
     )
 
-    @validator("log_level", "console_level", "file_level")
-    def validate_log_level(cls, v):
+    @field_validator("log_level", "console_level", "file_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
         """Ensure log level is valid."""
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if v.upper() not in valid_levels:
@@ -183,3 +182,15 @@ class LoggingConfig(BaseModel):
 
     class Config:
         env_prefix = "LOG_"
+
+
+class OutputConfig(BaseModel):
+    """Output file naming configuration."""
+    resume_pdf_name: str = Field(
+        default="resume",
+        description="Resume PDF filename (without .pdf extension)"
+    )
+    cover_letter_pdf_name: str = Field(
+        default="cover_letter",
+        description="Cover letter PDF filename (without .pdf extension)"
+    )
