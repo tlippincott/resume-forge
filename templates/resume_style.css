@@ -92,15 +92,20 @@ a {
     font-weight: 600;
 }
 
+.job-section {
+    margin-bottom: 20px;
+    break-inside: avoid;
+}
+
 .job-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 0;
 }
 
 .job-header h2 {
-  margin: 0;
+    margin: 0;
 }
 
 /* Page Margins */

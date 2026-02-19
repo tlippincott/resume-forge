@@ -83,10 +83,15 @@ def get_replacement_suggestions(
 
     logger.debug(f"Removed bullet: {removed_text[:50]}...")
 
+    # Filter suggestion pool to same section only
+    section_key = {"SPINS": "spins", "Programmer": "programmer", "Analyst": "analyst"}[section_name]
+    section_pool = [b for b in analyzed_bullets if b.get("section") == section_key]
+    logger.debug(f"Section pool for '{section_key}': {len(section_pool)} bullets")
+
     # Get top 5 suggestions
     suggestions = suggest_replacements(
         removed_bullet=removed_bullet,
-        all_bullets=analyzed_bullets,
+        all_bullets=section_pool,
         active_bullet_ids=used_bullet_ids,
         active_bullets=active_list,
         jd_analysis=jd_analysis

@@ -153,7 +153,7 @@ def generate_resume(job_description, company_name,
             temperature=config.llm.temperature_creative,
             timeout=config.llm.rewriting_timeout
         )
-        rewritten_bullets = rewritten["rewritten_bullets"]
+        rewritten_bullets = [b.rstrip(".") for b in rewritten["rewritten_bullets"]]
         logger.info(f"Rewrote {len(rewritten_bullets)} bullets")
     except KeyError as e:
         logger.error(f"LLM response missing expected key: {e}")
@@ -186,13 +186,30 @@ def generate_resume(job_description, company_name,
         if b.get("text") in used_texts
     }
 
+    # 4b. Analyze non-selected library bullets to populate the Edit tab suggestion pool
+    selected_texts_set = set(selected_texts)
+    non_selected_items = [item for item in bullet_items
+                          if item["text"] not in selected_texts_set]
+    if non_selected_items:
+        logger.debug(f"Analyzing {len(non_selected_items)} non-selected bullets for suggestion pool")
+        non_selected_texts = [item["text"] for item in non_selected_items]
+        pool_bullets = analyze_bullets(non_selected_texts)
+        pool_bullets = score_bullets_against_jd(pool_bullets, jd_analysis)
+        for bullet_dict, library_item in zip(pool_bullets, non_selected_items):
+            bullet_dict["section"] = library_item["section"]
+        logger.info(f"Added {len(pool_bullets)} non-selected bullets to suggestion pool")
+    else:
+        pool_bullets = []
+
+    all_analyzed_bullets = analyzed_bullets + pool_bullets
+
     result = {
         "summary": rewritten["summary"],
         "spins": sections["spins"],
         "programmer": sections["programmer"],
         "analyst": sections["analyst"],
         "metadata": {
-            "analyzed_bullets": analyzed_bullets,
+            "analyzed_bullets": all_analyzed_bullets,
             "jd_analysis": jd_analysis,
             "used_bullet_ids": used_bullet_ids
         }

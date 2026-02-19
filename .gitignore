@@ -28,3 +28,6 @@ output/
 # Pytest
 .coverage
 .pytest_cache/
+
+# Log files
+logs/

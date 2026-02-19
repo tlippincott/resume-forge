@@ -106,6 +106,7 @@ CRITICAL: You are refining language, NOT inventing experience.
     - Avoid superlatives (best, optimal, cutting-edge, innovative) unless in original
     - Avoid marketing language (transformative, game-changing, revolutionary)
     - Prefer concrete verbs over abstract ones
+    - Do NOT end bullets with a period
 
 6. ALIGNMENT RULES
     - You MAY emphasize aspects that match the job description
