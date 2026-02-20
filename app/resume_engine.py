@@ -7,6 +7,7 @@ from app.config import config
 from app.distribution_engine import group_by_section
 from app.openai_client import call_openai_json
 from app.prompts import bullet_selection_prompt, rewrite_prompt
+from app.summary_engine import generate_summary
 from app.bullet_intelligence import (
     get_cached_jd_analysis,
     analyze_bullets,
@@ -75,7 +76,8 @@ def select_bullets_by_section(
 
 
 def generate_resume(job_description, company_name,
-                    company_info, bullet_file, job_change) -> ResumeData:
+                    company_info, bullet_file, job_change,
+                    job_title: str = "") -> ResumeData:
     """
     Generate a tailored resume based on job description and bullet library.
 
@@ -85,6 +87,7 @@ def generate_resume(job_description, company_name,
         company_info: Information about the target company
         bullet_file: Path to bullet library JSON file
         job_change: Boolean indicating if this is a career change
+        job_title: Target job title (used for summary generation)
 
     Returns:
         ResumeData TypedDict containing summary, section bullets (spins,
@@ -159,6 +162,10 @@ def generate_resume(job_description, company_name,
         logger.error(f"LLM response missing expected key: {e}")
         raise DataProcessingError(f"Invalid LLM response structure: missing {e}")
 
+    # 3b. Generate summary via 2-step pipeline
+    logger.debug("Generating summary via competency + summary pipeline")
+    summary = generate_summary(job_description, rewritten_bullets, job_title, role)
+
     # 4. Analyze bullets
     logger.debug("Analyzing job description")
     jd_analysis = get_cached_jd_analysis(job_description)
@@ -204,7 +211,7 @@ def generate_resume(job_description, company_name,
     all_analyzed_bullets = analyzed_bullets + pool_bullets
 
     result = {
-        "summary": rewritten["summary"],
+        "summary": summary,
         "spins": sections["spins"],
         "programmer": sections["programmer"],
         "analyst": sections["analyst"],

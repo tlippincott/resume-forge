@@ -30,6 +30,7 @@ logger = get_logger(__name__)
 
 def generate_resume_adapter(
     job_description: str,
+    job_title: str,
     company_name: str,
     company_info: str,
     bullet_file: str,
@@ -40,6 +41,7 @@ def generate_resume_adapter(
 
     Args:
         job_description: Target job description
+        job_title: Target job title
         company_name: Target company name
         company_info: Information about the target company
         bullet_file: Path to bullet library JSON file
@@ -55,7 +57,8 @@ def generate_resume_adapter(
             company_name,
             company_info,
             bullet_file,
-            job_change
+            job_change,
+            job_title
         )
         logger.info(f"Adapter: Resume generation successful for {company_name}")
         return success(result)

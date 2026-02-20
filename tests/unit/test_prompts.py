@@ -112,7 +112,7 @@ class TestRewritePrompt:
         assert str(job_change) in content
 
     def test_includes_output_schema(self, sample_job_description, sample_bullets):
-        """Should include expected JSON output schema."""
+        """Should include expected JSON output schema (rewritten_bullets only; summary removed)."""
         result = rewrite_prompt(
             sample_job_description,
             "TechCorp",
@@ -123,7 +123,7 @@ class TestRewritePrompt:
         content = result[0]["content"]
 
         assert "rewritten_bullets" in content
-        assert "summary" in content
+        assert "summary" not in content
 
     def test_includes_truth_preserving_rules(self, sample_job_description, sample_bullets):
         """Should include rules to prevent hallucination."""

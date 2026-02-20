@@ -58,7 +58,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
     progress(0.2, desc="Calling resume engine...")
-    result_obj = generate_resume_adapter(jd, company, info, bullet_file, job_change)
+    result_obj = generate_resume_adapter(jd, job_title, company, info, bullet_file, job_change)
 
     # Check for failure
     if isinstance(result_obj, Failure):

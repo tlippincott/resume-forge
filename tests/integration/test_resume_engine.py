@@ -56,8 +56,7 @@ class TestGenerateResume:
         # select_bullets_by_section selects 12+12+10=34 bullets
         total = 12 + 12 + 10
         rewritten = {
-            "rewritten_bullets": [f"Rewritten bullet {i}" for i in range(total)],
-            "summary": "Professional summary based on experience."
+            "rewritten_bullets": [f"Rewritten bullet {i}" for i in range(total)]
         }
 
         return scored, rewritten
@@ -70,7 +69,8 @@ class TestGenerateResume:
                 "TechCorp",
                 "A tech company",
                 "/nonexistent/path/bullets.json",
-                False
+                False,
+                "Software Engineer"
             )
 
     def test_raises_on_invalid_bullet_library_format(self, tmp_path, sample_job_description):
@@ -87,7 +87,8 @@ class TestGenerateResume:
                 "TechCorp",
                 "A tech company",
                 str(bullet_file),
-                False
+                False,
+                "Software Engineer"
             )
 
     def test_returns_dict_with_required_keys(
@@ -109,13 +110,16 @@ class TestGenerateResume:
             for i in range(34)
         ])
         mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Professional summary based on experience.")
 
         result = generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             extended_bullet_file,
-            False
+            False,
+            "Software Engineer"
         )
 
         assert isinstance(result, dict)
@@ -142,13 +146,16 @@ class TestGenerateResume:
             for i in range(34)
         ])
         mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Professional summary based on experience.")
 
         result = generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             extended_bullet_file,
-            False
+            False,
+            "Software Engineer"
         )
 
         assert isinstance(result["summary"], str)
@@ -172,13 +179,16 @@ class TestGenerateResume:
             for i in range(34)
         ])
         mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Professional summary based on experience.")
 
         result = generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             extended_bullet_file,
-            False
+            False,
+            "Software Engineer"
         )
 
         assert isinstance(result["spins"], list)
@@ -206,13 +216,16 @@ class TestGenerateResume:
             for i in range(34)
         ])
         mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Professional summary based on experience.")
 
         generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             extended_bullet_file,
-            False
+            False,
+            "Software Engineer"
         )
 
         first_call = mock_call.call_args_list[0]
@@ -237,13 +250,16 @@ class TestGenerateResume:
             for i in range(34)
         ])
         mocker.patch("app.resume_engine.score_bullets_against_jd", side_effect=lambda b, _: b)
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Professional summary based on experience.")
 
         generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             extended_bullet_file,
-            False
+            False,
+            "Software Engineer"
         )
 
         second_call = mock_call.call_args_list[1]
@@ -286,13 +302,16 @@ class TestGenerateResume:
 
         mock_rewrite = mocker.patch("app.resume_engine.rewrite_prompt")
         mock_rewrite.return_value = [{"role": "user", "content": "test"}]
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Test summary")
 
         generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             str(bullet_file),
-            False
+            False,
+            "Software Engineer"
         )
 
         assert mock_rewrite.called
@@ -336,13 +355,16 @@ class TestGenerateResume:
 
         mock_rewrite = mocker.patch("app.resume_engine.rewrite_prompt")
         mock_rewrite.return_value = [{"role": "user", "content": "test"}]
+        mocker.patch("app.resume_engine.generate_summary",
+                     return_value="Test summary")
 
         generate_resume(
             sample_job_description,
             "TechCorp",
             "A tech company",
             str(bullet_file),
-            False
+            False,
+            "Software Engineer"
         )
 
         call_args = mock_rewrite.call_args
