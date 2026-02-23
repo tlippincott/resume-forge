@@ -6,18 +6,68 @@ substituting placeholders.
 """
 
 import html
+import json
 from pathlib import Path
 from app.exceptions import FileOperationError
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+_TECHNICAL_SKILLS_CONFIG = Path(__file__).parent.parent / "config" / "technical_skills.json"
+
+
+def build_technical_skills_html(role: str = "General") -> str:
+    """
+    Build the TECHNICAL SKILLS HTML block for the resume template.
+
+    Loads section content and role-specific ordering from technical_skills.json.
+    Falls back to "General" ordering if the role is not found.
+
+    Args:
+        role: Role type (e.g. "Programmer", "Analyst", "Help Desk")
+
+    Returns:
+        HTML string with all tech-skills-group divs in role-appropriate order
+    """
+    try:
+        with open(_TECHNICAL_SKILLS_CONFIG, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        logger.warning(f"Could not load technical_skills.json: {e}")
+        return ""
+
+    sections = config.get("sections", {})
+    role_ordering = config.get("role_ordering", {})
+    order = role_ordering.get(role, role_ordering.get("General", []))
+
+    parts = []
+    for key in order:
+        section = sections.get(key)
+        if not section:
+            continue
+        heading = html.escape(section.get("heading", key))
+        bullets = section.get("bullets", [])
+        li_items = "\n        ".join(
+            f"<li>{html.escape(b)}</li>" for b in bullets
+        )
+        parts.append(
+            f'<div class="tech-skills-group">\n'
+            f'  <p class="skills"><span class="strong">{heading}:</span></p>\n'
+            f'  <ul>\n'
+            f'    {li_items}\n'
+            f'  </ul>\n'
+            f'</div>'
+        )
+
+    return "\n".join(parts)
+
 
 def load_resume_html(
     summary: str,
     spins_html: str,
     programmer_html: str,
-    analyst_html: str
+    analyst_html: str,
+    role: str = "General"
 ) -> str:
     """
     Load resume template and substitute placeholders.
@@ -27,6 +77,7 @@ def load_resume_html(
         spins_html: HTML for SPINS section
         programmer_html: HTML for programmer section
         analyst_html: HTML for analyst section
+        role: Role type for technical skills ordering (default "General")
 
     Returns:
         Complete HTML document with substitutions
@@ -69,6 +120,7 @@ def load_resume_html(
     html_content = html_content.replace("{spins}", spins_html or "")
     html_content = html_content.replace("{programmer}", programmer_html or "")
     html_content = html_content.replace("{analyst}", analyst_html or "")
+    html_content = html_content.replace("{technical_skills}", build_technical_skills_html(role))
 
     logger.debug("Resume HTML template loaded and substituted successfully")
     return html_content

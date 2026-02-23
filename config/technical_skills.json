@@ -1,0 +1,129 @@
+{
+  "sections": {
+    "programming_and_scripting": {
+      "heading": "Programming and Scripting",
+      "bullets": [
+        "SQL, Javascript, Python",
+        "Experience maintaining and enhancing legacy systems as well as developing new application features"
+      ]
+    },
+    "systems_and_architecture": {
+      "heading": "Systems and Architecture",
+      "bullets": [
+        "Application design, system integration, and requirements translation",
+        "Experience supporting both small startup environments (12-person team) and state government operations"
+      ]
+    },
+    "data_and_analysis": {
+      "heading": "Data and Analysis",
+      "bullets": [
+        "SQL querying, data extraction, reporting, and exploratory analysis",
+        "Experience working with structured datasets to support operational and executive decision-making"
+      ]
+    },
+    "tools_and_environments": {
+      "heading": "Tools and Environments",
+      "bullets": [
+        "Git, GitHub",
+        "Jira, Confluence, Notion",
+        "Visual Studio"
+      ]
+    },
+    "technical_support": {
+      "heading": "Technical Support and Troubleshooting",
+      "bullets": [
+        "Application debugging, user issue resolution, system diagnostics",
+        "Experience supporting executive-level stakeholders in government environment",
+        "Supported proprietary SaaS applications in quick iterating startup environment"
+      ]
+    },
+    "ai_programming": {
+      "heading": "AI-Assisted Development and Automation",
+      "bullets": [
+        "Experience integrating AI-assisted tools (ChatGPT, Claude, Copilot) into development and analysis workflows",
+        "Used large language model (LLM) analysis to accelerate bug resolution, refactoring, code review, testing, and documentation tasks",
+        "Employed AI tools to accelerate prototyping and analyzing unfamiliar codebases"
+      ]
+    },
+    "ai_help_desk": {
+      "heading": "AI-Assisted Development and Automation",
+      "bullets": [
+        "Experience integrating AI-assisted tools (ChatGPT, Claude, Copilot) into development and analysis workflows",
+        "Used large language model (LLM) analysis to accelerate bug resolution, refactoring, code review, testing, and documentation tasks",
+        "Employed AI tools to accelerate prototyping and analyzing unfamiliar codebases"
+      ]
+    },
+    "ai_sales_engineer": {
+      "heading": "AI-Assisted Technical Analysis",
+      "bullets": [
+        "Utilized large language model (LLM) tools to rapidly analyze product documentation, generate technical explanations, and prototype solution concepts during exploratory development",
+        "Applied prompt refinement techniques to tailor technical outputs for various scenarios and code refinement"
+      ]
+    },
+    "ai_systems_engineer": {
+      "heading": "AI-Assisted Development and Automation",
+      "bullets": [
+        "Applied AI tools to analyze existing workflow, identifying bottlenecks and redundancies and offering possible solutions",
+        "Generated and continuously updated system documentation, and architectural summaries from codebases using AI-powered documentation tools",
+        "Employed generative AI to create edge-case test scenarios from requirements, improving coverage and identifying logical gaps before development began"
+      ]
+    },
+    "ai_analyst": {
+      "heading": "AI-Enabled Workflow Optimization",
+      "bullets": [
+        "Applied large language model (LLM) tools to clarify requirements, summarize technical documentation, and explore implementation approaches during project planning and prototyping",
+        "Leveraged AI-assisted analysis to improve estimation accuracy and reduce exploratory development time"
+      ]
+    },
+    "ai_general": {
+      "heading": "AI-Assisted Devlopment and Automation",
+      "bullets": [
+        "Integrated large language model (LLM) tools into software development workflows for code generation, debugging, refactoring, test creation, and architectural exploration",
+        "Used AI tools to accelerate prototyping and analyze unfamiliar codebases",
+        "Experience with prompt design strategies to improve output accuracy and reduce iteration cycles"
+      ]
+    }
+  },
+  "role_ordering": {
+    "Software Developer": [
+      "programming_and_scripting",
+      "systems_and_architecture",
+      "ai_assisted_development",
+      "data_and_analysis",
+      "technical_support",
+      "tools_and_environments"
+    ],
+    "Software Analyst": [
+      "data_and_analysis",
+      "systems_and_architecture",
+      "ai_analyst",
+      "programming_and_scripting",
+      "technical_support",
+      "tools_and_environments"
+    ],
+    "Help Desk": [
+      "technical_support",
+      "tools_and_environments",
+      "ai_help_desk",
+      "programming_and_scripting",
+      "systems_and_architecture",
+      "data_and_analysis"
+    ],
+    "Sales Engineer": [
+      "ai_sales_engineer",
+      "systems_and_architecture",
+      "technical_support",
+      "data_and_analysis",
+      "programming_and_scripting",
+      "tools_and_environments"
+    ],
+    "General": [
+      "programming_and_scripting",
+      "systems_and_architecture",
+      "data_and_analysis",
+      "tools_and_environments",
+      "ai_assisted_development",
+      "technical_support"
+    ]
+  }
+}

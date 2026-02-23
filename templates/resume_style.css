@@ -92,6 +92,10 @@ a {
     font-weight: 600;
 }
 
+.tech-skills-group {
+    margin-bottom: 6px;
+}
+
 .job-section {
     margin-bottom: 20px;
     break-inside: avoid;

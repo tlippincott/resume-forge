@@ -300,7 +300,7 @@ Relevant Experience Highlights:
 Constraints:
 - Begin with the REQUIRED OPENING SENTENCE exactly as written above.
 - Emphasize concrete technical scope and environments (startup, state government, executive-level support).
-- Include 1–2 measurable or concrete outcomes if available.
+- After the opening sentence, at most 2 sentences may contain a measurable result (a specific percentage, headcount, dollar figure, or fixed integer). All other sentences must describe competencies, technical scope, or environments — no quantified metrics.
 - Avoid soft-skill buzzwords (no 'results-driven,' 'passionate,' 'dynamic,' etc.).
 - Do not mention that you are applying for the role.
 - Keep tone direct and factual.

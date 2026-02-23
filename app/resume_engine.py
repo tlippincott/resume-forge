@@ -215,6 +215,7 @@ def generate_resume(job_description, company_name,
         "spins": sections["spins"],
         "programmer": sections["programmer"],
         "analyst": sections["analyst"],
+        "role": role,
         "metadata": {
             "analyzed_bullets": all_analyzed_bullets,
             "jd_analysis": jd_analysis,

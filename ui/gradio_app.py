@@ -54,7 +54,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
 
     if not bullet_file:
         error_status = gr.Markdown(value="❌ Please select a bullet file", visible=True)
-        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
+        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
     progress(0.2, desc="Calling resume engine...")
@@ -64,7 +64,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
     if isinstance(result_obj, Failure):
         error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
         error_status = gr.Markdown(value=f"❌ {result_obj.error_message}", visible=True)
-        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
+        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
 
     # Extract result from Success
     progress(0.5, desc="Processing results...")
@@ -75,6 +75,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
     spins_list = result["spins"]
     programmer_list = result["programmer"]
     analyst_list = result["analyst"]
+    role = result.get("role", "General")
     metadata = result.get("metadata", {})
     analyzed_bullets = metadata.get("analyzed_bullets", [])
     jd_analysis = metadata.get("jd_analysis", {})
@@ -121,6 +122,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
         used_bullet_ids,       # State: used_bullet_ids
         jd,                    # State: job_description
         canonical_bullets,     # State: canonical_bullets
+        role,                  # State: role
         gr.Radio(choices=spins_radio_choices, value=spins_radio_choices[0][1] if spins_radio_choices else None),  # spins_bullet_radio
         gr.Radio(choices=programmer_radio_choices, value=programmer_radio_choices[0][1] if programmer_radio_choices else None),  # programmer_bullet_radio
         gr.Radio(choices=analyst_radio_choices, value=analyst_radio_choices[0][1] if analyst_radio_choices else None),  # analyst_bullet_radio
@@ -128,7 +130,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
     )
 
 
-def handle_preview_update(summary_text, state_canonical_bullets):
+def handle_preview_update(summary_text, state_canonical_bullets, role: str = "General"):
     """
     Update preview from canonical state (Phase 3B: one-way conversion).
 
@@ -153,7 +155,7 @@ def handle_preview_update(summary_text, state_canonical_bullets):
     analyst_html = build_html_bullets(analyst_list)
 
     # Load template and substitute
-    html = load_resume_html(summary_text, spins_html, programmer_html, analyst_html)
+    html = load_resume_html(summary_text, spins_html, programmer_html, analyst_html, role=role)
 
     return html
 
@@ -647,6 +649,7 @@ def launch_app():
 
         # Phase 3: Canonical state (single source of truth for section bullets)
         state_canonical_bullets = gr.State(value=[])      # All section bullets with "section" field
+        state_role = gr.State(value="General")             # Role for technical skills ordering
 
         # Tab 1: Generate
         with gr.Tab("Generate"):
@@ -938,6 +941,7 @@ def launch_app():
                 state_used_bullet_ids,       # NEW: Track active bullets
                 state_job_description,       # NEW: Preserve JD for suggestions
                 state_canonical_bullets,     # Phase 3: Canonical state (single source of truth)
+                state_role,                  # State: role for technical skills ordering
                 spins_bullet_radio,          # Radio: SPINS bullet selection
                 programmer_bullet_radio,     # Radio: Programmer bullet selection
                 analyst_bullet_radio,        # Radio: Analyst bullet selection
@@ -992,7 +996,7 @@ def launch_app():
         # Auto-update preview when tab is selected (Phase 3B: uses canonical state)
         preview_tab.select(
             fn=handle_preview_update,
-            inputs=[state_summary, state_canonical_bullets],
+            inputs=[state_summary, state_canonical_bullets, state_role],
             outputs=preview_html
         )
 

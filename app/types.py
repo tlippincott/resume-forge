@@ -113,12 +113,14 @@ class ResumeData(TypedDict):
         spins: List of SPINS bullets (end-user interaction)
         programmer: List of Programmer bullets (technical implementation)
         analyst: List of Analyst bullets (analysis & documentation)
+        role: Role type from bullet library (e.g. "Programmer", "Analyst")
         metadata: Intelligence data for downstream use (replacement, cover letter)
     """
     summary: str
     spins: List[str]
     programmer: List[str]
     analyst: List[str]
+    role: str
     metadata: ResumeMetadata
 
 
