@@ -12,7 +12,9 @@ from ui.resume_helpers import (
     generate_cover_letter_pdf_file,
     list_gap_files,
     load_gap_explanation,
-    derive_gap_file_from_bullet_file
+    derive_gap_file_from_bullet_file,
+    cover_letter_html_to_text,
+    cover_letter_text_to_html,
 )
 from ui.bullet_editor_helpers import (
     load_bullet_library,
@@ -251,17 +253,21 @@ def handle_generate_cover_letter(summary_text, spins_text, programmer_text, anal
     }, cover_letter_html, success_status
 
 
-def handle_cover_letter_preview_update(cover_letter_html):
-    """Update cover letter preview from state."""
+def handle_cover_letter_tab_select(cover_letter_html):
+    """Populate edit box and HTML preview when Tab 6 is selected."""
     if not cover_letter_html:
-        return "<p>No cover letter generated yet. Generate a cover letter first.</p>"
+        placeholder = "<p>No cover letter generated yet. Generate a cover letter first.</p>"
+        return "", placeholder
+    text = cover_letter_html_to_text(cover_letter_html)
+    full_html = load_cover_letter_html(cover_letter_html)
+    return text, full_html
 
-    try:
-        # Load full HTML template with cover letter body
-        html = load_cover_letter_html(cover_letter_html)
-        return html
-    except Exception as e:
-        return f"<p>Error loading preview: {str(e)}</p>"
+
+def handle_update_cover_preview(edited_text):
+    """Convert edited text back to HTML body, update state and preview."""
+    html_body = cover_letter_text_to_html(edited_text)
+    full_html = load_cover_letter_html(html_body)
+    return html_body, full_html  # → state_cover_letter_html, cover_preview_html
 
 
 def handle_cover_letter_pdf_generation(cover_letter_html):
@@ -628,6 +634,75 @@ def handle_cancel_replacement():
     )
 
 
+def handle_reset():
+    """Reset all session components and state variables to startup defaults."""
+    return (
+        # Tab 1 inputs (8)
+        gr.update(value=""),    # jd
+        gr.update(value=""),    # job_title
+        gr.update(value=""),    # company
+        gr.update(value=""),    # info
+        gr.update(value=None),  # bullet_file
+        gr.update(value=False), # job_change
+        gr.update(value={}),    # output
+        gr.update(value="", visible=False),  # generate_status
+        # State variables (13)
+        "",        # state_summary
+        [],        # state_spins
+        [],        # state_programmer
+        [],        # state_analyst
+        "",        # state_job_title
+        "",        # state_cover_letter_html
+        "",        # state_selected_bullet_file
+        [],        # state_analyzed_bullets
+        {},        # state_jd_analysis
+        set(),     # state_used_bullet_ids
+        "",        # state_job_description
+        [],        # state_canonical_bullets
+        "General", # state_role
+        # Tab 2 Edit components (17)
+        gr.update(value=""),    # edit_summary
+        gr.update(value=""),    # edit_spins
+        gr.update(value=""),    # edit_programmer
+        gr.update(value=""),    # edit_analyst
+        gr.update(choices=[], value=None),  # spins_bullet_radio
+        gr.update(choices=[], value=None),  # programmer_bullet_radio
+        gr.update(choices=[], value=None),  # analyst_bullet_radio
+        gr.update(value="", visible=False),  # spins_suggestion_status
+        gr.update(value="", visible=False),  # programmer_suggestion_status
+        gr.update(value="", visible=False),  # analyst_suggestion_status
+        gr.update(value="", visible=False),  # removed_bullet_display
+        gr.update(choices=[], value=None, visible=False),  # suggestions_radio
+        gr.update(value="", visible=False),  # suggestion_explanation
+        gr.update(value="", visible=False),  # coverage_warning
+        gr.update(visible=False),  # confirm_replace_btn
+        gr.update(visible=False),  # cancel_replace_btn
+        gr.update(value="", visible=False),  # replacement_status
+        # Tab 2 Edit internal states (3)
+        "",  # replacement_target_section
+        0,   # replacement_target_index
+        {},  # replacement_removed_bullet
+        # Tab 4 Preview (3)
+        gr.update(value=""),    # preview_html
+        gr.update(value=None),  # pdf_file_output
+        gr.update(value=""),    # status_message
+        # Tab 5 Cover Letter (8)
+        gr.update(value=""),    # company_hook
+        gr.update(value=""),    # personal_alignment
+        gr.update(value=""),    # credibility_anchor
+        gr.update(value=True),  # include_gap
+        gr.update(value=None),  # gap_role_dropdown
+        gr.update(value=""),    # gap_text
+        gr.update(value={}),    # cover_output
+        gr.update(value="", visible=False),  # cover_generation_status
+        # Tab 6 Cover Letter Preview (4, was 3)
+        gr.update(value=""),    # cover_letter_edit
+        gr.update(value=""),    # cover_preview_html
+        gr.update(value=None),  # cover_pdf_file_output
+        gr.update(value=""),    # cover_status_message
+    )
+
+
 def launch_app():
     with gr.Blocks() as demo:
         gr.Markdown("## Resume Forge")
@@ -666,7 +741,9 @@ def launch_app():
 
             output = gr.JSON()
 
-            run = gr.Button("Generate Resume")
+            with gr.Row():
+                run = gr.Button("Generate Resume", variant="primary")
+                reset_btn = gr.Button("Reset", variant="secondary")
             generate_status = gr.Markdown(value="", visible=False)
 
         # Tab 2: Edit
@@ -915,6 +992,14 @@ def launch_app():
 
         # Tab 6: Cover Letter Preview & Export
         with gr.Tab("Cover Letter Preview & Export") as cover_preview_tab:
+            gr.Markdown("### Edit Cover Letter Text")
+            gr.Markdown("Review and edit the paragraph text below, then click **Update Preview** to refresh.")
+            cover_letter_edit = gr.Textbox(
+                label="Cover Letter Body (editable)",
+                lines=15,
+                interactive=True
+            )
+            update_cover_preview_btn = gr.Button("Update Preview", variant="secondary")
             cover_preview_html = gr.HTML(label="Cover Letter Preview")
             generate_cover_pdf_btn = gr.Button("Generate PDF")
             cover_pdf_file_output = gr.File(label="Download Cover Letter PDF")
@@ -946,6 +1031,28 @@ def launch_app():
                 programmer_bullet_radio,     # Radio: Programmer bullet selection
                 analyst_bullet_radio,        # Radio: Analyst bullet selection
                 generate_status              # Status: Generation status message
+            ]
+        )
+
+        reset_btn.click(
+            fn=handle_reset,
+            inputs=[],
+            outputs=[
+                jd, job_title, company, info, bullet_file, job_change, output, generate_status,
+                state_summary, state_spins, state_programmer, state_analyst,
+                state_job_title, state_cover_letter_html, state_selected_bullet_file,
+                state_analyzed_bullets, state_jd_analysis, state_used_bullet_ids,
+                state_job_description, state_canonical_bullets, state_role,
+                edit_summary, edit_spins, edit_programmer, edit_analyst,
+                spins_bullet_radio, programmer_bullet_radio, analyst_bullet_radio,
+                spins_suggestion_status, programmer_suggestion_status, analyst_suggestion_status,
+                removed_bullet_display, suggestions_radio, suggestion_explanation,
+                coverage_warning, confirm_replace_btn, cancel_replace_btn, replacement_status,
+                replacement_target_section, replacement_target_index, replacement_removed_bullet,
+                preview_html, pdf_file_output, status_message,
+                company_hook, personal_alignment, credibility_anchor, include_gap,
+                gap_role_dropdown, gap_text, cover_output, cover_generation_status,
+                cover_letter_edit, cover_preview_html, cover_pdf_file_output, cover_status_message,
             ]
         )
 
@@ -1021,9 +1128,16 @@ def launch_app():
 
         # Auto-update cover letter preview when tab selected
         cover_preview_tab.select(
-            fn=handle_cover_letter_preview_update,
+            fn=handle_cover_letter_tab_select,
             inputs=state_cover_letter_html,
-            outputs=cover_preview_html
+            outputs=[cover_letter_edit, cover_preview_html]
+        )
+
+        # Update preview from edited text
+        update_cover_preview_btn.click(
+            fn=handle_update_cover_preview,
+            inputs=cover_letter_edit,
+            outputs=[state_cover_letter_html, cover_preview_html]
         )
 
         # Generate cover letter PDF
