@@ -1,7 +1,17 @@
 import gradio as gr
+from datetime import date
 from pathlib import Path
 from ui.adapters import generate_resume_adapter, generate_cover_letter_adapter
 from app.error_result import Success, Failure
+from app.job_tracker import (
+    init_db,
+    save_application,
+    update_rejection,
+    update_interview,
+    update_pdf_paths,
+    list_applications,
+)
+from app.application_archive import archive_pdfs
 from ui.resume_helpers import (
     build_html_bullets,
     bullets_to_text,
@@ -56,7 +66,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
 
     if not bullet_file:
         error_status = gr.Markdown(value="❌ Please select a bullet file", visible=True)
-        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
+        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status, ""
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
     progress(0.2, desc="Calling resume engine...")
@@ -66,7 +76,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
     if isinstance(result_obj, Failure):
         error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
         error_status = gr.Markdown(value=f"❌ {result_obj.error_message}", visible=True)
-        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status
+        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status, ""
 
     # Extract result from Success
     progress(0.5, desc="Processing results...")
@@ -128,7 +138,8 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
         gr.Radio(choices=spins_radio_choices, value=spins_radio_choices[0][1] if spins_radio_choices else None),  # spins_bullet_radio
         gr.Radio(choices=programmer_radio_choices, value=programmer_radio_choices[0][1] if programmer_radio_choices else None),  # programmer_bullet_radio
         gr.Radio(choices=analyst_radio_choices, value=analyst_radio_choices[0][1] if analyst_radio_choices else None),  # analyst_bullet_radio
-        success_status         # generate_status
+        success_status,        # generate_status
+        company,               # State: company_name
     )
 
 
@@ -166,9 +177,9 @@ def handle_pdf_generation(html_content):
     """Generate PDF from current preview."""
     try:
         pdf_path = generate_pdf_file(html_content)
-        return pdf_path, f"PDF generated successfully: {Path(pdf_path).name}"
+        return pdf_path, f"PDF generated successfully: {Path(pdf_path).name}", pdf_path
     except Exception as e:
-        return None, f"Error generating PDF: {str(e)}"
+        return None, f"Error generating PDF: {str(e)}", None
 
 
 def handle_generate_cover_letter(summary_text, spins_text, programmer_text, analyst_text,
@@ -273,7 +284,7 @@ def handle_update_cover_preview(edited_text):
 def handle_cover_letter_pdf_generation(cover_letter_html):
     """Generate PDF from cover letter HTML."""
     if not cover_letter_html:
-        return None, "Please generate a cover letter first"
+        return None, "Please generate a cover letter first", None
 
     try:
         # Load full HTML template
@@ -281,9 +292,9 @@ def handle_cover_letter_pdf_generation(cover_letter_html):
 
         # Generate PDF
         pdf_path = generate_cover_letter_pdf_file(html)
-        return pdf_path, f"PDF generated successfully: {Path(pdf_path).name}"
+        return pdf_path, f"PDF generated successfully: {Path(pdf_path).name}", pdf_path
     except Exception as e:
-        return None, f"Error generating PDF: {str(e)}"
+        return None, f"Error generating PDF: {str(e)}", None
 
 
 def handle_gap_role_change(gap_file_path):
@@ -634,6 +645,102 @@ def handle_cancel_replacement():
     )
 
 
+def _applications_to_dataframe_rows(apps: list[dict]) -> list[list]:
+    rows = []
+    for app in apps:
+        rows.append([
+            app["id"],
+            app["applied_date"],
+            app["company_name"],
+            app["job_title"],
+            app["status"],
+            app["days_pending"],
+            app.get("notes", "") or "",
+        ])
+    return rows
+
+
+def handle_tracker_tab_select(company_name, job_title, job_description, resume_pdf_path, cover_letter_pdf_path):
+    """Pre-fill the save form and load the applications dataframe."""
+    today = date.today().isoformat()
+    apps = list_applications()
+    rows = _applications_to_dataframe_rows(apps)
+    return (
+        today,
+        company_name or "",
+        job_title or "",
+        job_description or "",
+        resume_pdf_path or "",
+        cover_letter_pdf_path or "",
+        rows,
+    )
+
+
+def handle_save_application(applied_date, company_name, job_title, job_description, notes, resume_pdf_path, cover_letter_pdf_path):
+    """Archive PDFs, insert DB row, refresh dataframe."""
+    if not company_name or not company_name.strip():
+        return "❌ Company name is required", gr.update()
+    if not job_title or not job_title.strip():
+        return "❌ Job title is required", gr.update()
+    if not applied_date or not applied_date.strip():
+        return "❌ Applied date is required", gr.update()
+
+    app_id = save_application(
+        applied_date=applied_date.strip(),
+        company_name=company_name.strip(),
+        job_title=job_title.strip(),
+        job_description=job_description or None,
+        notes=notes or None,
+    )
+
+    resume_archive, cover_archive = archive_pdfs(
+        app_id, company_name, job_title, resume_pdf_path or None, cover_letter_pdf_path or None
+    )
+
+    if resume_archive or cover_archive:
+        update_pdf_paths(app_id, resume_archive, cover_archive)
+
+    apps = list_applications()
+    rows = _applications_to_dataframe_rows(apps)
+    return f"✓ Saved application #{app_id}", rows
+
+
+def handle_refresh_applications():
+    """Reload applications from DB."""
+    apps = list_applications()
+    return _applications_to_dataframe_rows(apps)
+
+
+def handle_mark_rejected(app_id, rejection_date):
+    """Mark an application as rejected and refresh the dataframe."""
+    if not app_id:
+        return "❌ Enter an application ID", gr.update()
+    if not rejection_date or not rejection_date.strip():
+        return "❌ Enter a rejection date", gr.update()
+    try:
+        update_rejection(int(app_id), rejection_date.strip())
+        apps = list_applications()
+        rows = _applications_to_dataframe_rows(apps)
+        return f"✓ Marked application #{int(app_id)} as rejected", rows
+    except Exception as e:
+        return f"❌ Error: {str(e)}", gr.update()
+
+
+def handle_mark_interview(app_id, interview_date):
+    """Mark an application as having an interview and refresh the dataframe."""
+    if not app_id:
+        return "❌ Enter an application ID", gr.update()
+    if not interview_date or not interview_date.strip():
+        return "❌ Enter an interview date", gr.update()
+    try:
+        update_interview(int(app_id), interview_date.strip())
+        apps = list_applications()
+        rows = _applications_to_dataframe_rows(apps)
+        return f"✓ Marked application #{int(app_id)} as interview scheduled", rows
+    except Exception as e:
+        return f"❌ Error: {str(e)}", gr.update()
+
+
 def handle_reset():
     """Reset all session components and state variables to startup defaults."""
     return (
@@ -646,7 +753,7 @@ def handle_reset():
         gr.update(value=False), # job_change
         gr.update(value={}),    # output
         gr.update(value="", visible=False),  # generate_status
-        # State variables (13)
+        # State variables (16)
         "",        # state_summary
         [],        # state_spins
         [],        # state_programmer
@@ -660,6 +767,9 @@ def handle_reset():
         "",        # state_job_description
         [],        # state_canonical_bullets
         "General", # state_role
+        "",        # state_company_name
+        None,      # state_resume_pdf_path
+        None,      # state_cover_letter_pdf_path
         # Tab 2 Edit components (17)
         gr.update(value=""),    # edit_summary
         gr.update(value=""),    # edit_spins
@@ -725,6 +835,11 @@ def launch_app():
         # Phase 3: Canonical state (single source of truth for section bullets)
         state_canonical_bullets = gr.State(value=[])      # All section bullets with "section" field
         state_role = gr.State(value="General")             # Role for technical skills ordering
+
+        # Job Tracker state
+        state_company_name = gr.State(value="")
+        state_resume_pdf_path = gr.State(value=None)
+        state_cover_letter_pdf_path = gr.State(value=None)
 
         # Tab 1: Generate
         with gr.Tab("Generate"):
@@ -1005,6 +1120,38 @@ def launch_app():
             cover_pdf_file_output = gr.File(label="Download Cover Letter PDF")
             cover_status_message = gr.Textbox(label="Status", interactive=False)
 
+        # Tab 7: Job Tracker
+        with gr.Tab("Job Tracker") as tracker_tab:
+            with gr.Accordion("Save Current Application", open=True):
+                tracker_applied_date = gr.Textbox(label="Applied Date (YYYY-MM-DD)", value="")
+                tracker_company = gr.Textbox(label="Company")
+                tracker_job_title_input = gr.Textbox(label="Job Title")
+                tracker_job_description = gr.Textbox(label="Job Description", lines=4)
+                tracker_notes = gr.Textbox(label="Notes (optional)", lines=2)
+                tracker_resume_path_display = gr.Textbox(label="Resume PDF", interactive=False)
+                tracker_cover_letter_path_display = gr.Textbox(label="Cover Letter PDF", interactive=False)
+                save_application_btn = gr.Button("Save Application", variant="primary")
+                save_status = gr.Markdown(value="")
+
+            refresh_applications_btn = gr.Button("Refresh Applications")
+            applications_df = gr.Dataframe(
+                headers=["ID", "Date", "Company", "Title", "Status", "Days", "Notes"],
+                datatype=["number", "str", "str", "str", "str", "number", "str"],
+                label="Applications",
+                wrap=True,
+            )
+
+            gr.Markdown("---\n### Update Application Status")
+            with gr.Row():
+                update_app_id = gr.Number(label="Application ID", precision=0)
+                with gr.Column():
+                    rejection_date_input = gr.Textbox(label="Rejection Date (YYYY-MM-DD)")
+                    mark_rejected_btn = gr.Button("Mark Rejected")
+                with gr.Column():
+                    interview_date_input = gr.Textbox(label="Interview Date (YYYY-MM-DD)")
+                    mark_interview_btn = gr.Button("Mark Interview Scheduled")
+            update_status = gr.Markdown(value="")
+
         # Event handlers (Tab 1: Generate)
         run.click(
             fn=handle_generate,
@@ -1030,7 +1177,8 @@ def launch_app():
                 spins_bullet_radio,          # Radio: SPINS bullet selection
                 programmer_bullet_radio,     # Radio: Programmer bullet selection
                 analyst_bullet_radio,        # Radio: Analyst bullet selection
-                generate_status              # Status: Generation status message
+                generate_status,             # Status: Generation status message
+                state_company_name,          # State: company name for Job Tracker
             ]
         )
 
@@ -1043,6 +1191,7 @@ def launch_app():
                 state_job_title, state_cover_letter_html, state_selected_bullet_file,
                 state_analyzed_bullets, state_jd_analysis, state_used_bullet_ids,
                 state_job_description, state_canonical_bullets, state_role,
+                state_company_name, state_resume_pdf_path, state_cover_letter_pdf_path,
                 edit_summary, edit_spins, edit_programmer, edit_analyst,
                 spins_bullet_radio, programmer_bullet_radio, analyst_bullet_radio,
                 spins_suggestion_status, programmer_suggestion_status, analyst_suggestion_status,
@@ -1111,7 +1260,7 @@ def launch_app():
         generate_pdf_btn.click(
             fn=handle_pdf_generation,
             inputs=preview_html,
-            outputs=[pdf_file_output, status_message]
+            outputs=[pdf_file_output, status_message, state_resume_pdf_path]
         )
 
         # Generate cover letter (Phase 1A: now passes pre-analyzed JD)
@@ -1144,7 +1293,7 @@ def launch_app():
         generate_cover_pdf_btn.click(
             fn=handle_cover_letter_pdf_generation,
             inputs=state_cover_letter_html,
-            outputs=[cover_pdf_file_output, cover_status_message]
+            outputs=[cover_pdf_file_output, cover_status_message, state_cover_letter_pdf_path]
         )
 
         # NEW: Auto-populate gap dropdown on app load
@@ -1322,6 +1471,66 @@ def launch_app():
             outputs=[analyst_bullet_radio]
         )
 
+        # ===== JOB TRACKER EVENT HANDLERS =====
+
+        # Pre-fill form and load dataframe when Tab 7 is selected
+        tracker_tab.select(
+            fn=handle_tracker_tab_select,
+            inputs=[
+                state_company_name,
+                state_job_title,
+                state_job_description,
+                state_resume_pdf_path,
+                state_cover_letter_pdf_path,
+            ],
+            outputs=[
+                tracker_applied_date,
+                tracker_company,
+                tracker_job_title_input,
+                tracker_job_description,
+                tracker_resume_path_display,
+                tracker_cover_letter_path_display,
+                applications_df,
+            ]
+        )
+
+        # Save application
+        save_application_btn.click(
+            fn=handle_save_application,
+            inputs=[
+                tracker_applied_date,
+                tracker_company,
+                tracker_job_title_input,
+                tracker_job_description,
+                tracker_notes,
+                state_resume_pdf_path,
+                state_cover_letter_pdf_path,
+            ],
+            outputs=[save_status, applications_df]
+        )
+
+        # Refresh applications dataframe
+        refresh_applications_btn.click(
+            fn=handle_refresh_applications,
+            inputs=[],
+            outputs=[applications_df]
+        )
+
+        # Mark rejected
+        mark_rejected_btn.click(
+            fn=handle_mark_rejected,
+            inputs=[update_app_id, rejection_date_input],
+            outputs=[update_status, applications_df]
+        )
+
+        # Mark interview scheduled
+        mark_interview_btn.click(
+            fn=handle_mark_interview,
+            inputs=[update_app_id, interview_date_input],
+            outputs=[update_status, applications_df]
+        )
+
+    init_db()
     demo.launch(theme=gr.themes.Soft())
 
 

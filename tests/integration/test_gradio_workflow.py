@@ -34,8 +34,8 @@ class TestGradioWorkflow:
             sample_inputs["job_change"]
         )
 
-        # Should return 21 outputs (includes metadata states, canonical bullets, role, radio choices, status)
-        assert len(result) == 21
+        # Should return 22 outputs (includes metadata states, canonical bullets, role, radio choices, status, company_name)
+        assert len(result) == 22
 
         # First output should be dict (JSON)
         assert isinstance(result[0], dict)
@@ -65,6 +65,7 @@ class TestGradioWorkflow:
         assert isinstance(result[16], str)   # state_role
         # Outputs 17-19 are Gradio Radio components (bullet selection dropdowns)
         # Output 20 is a Gradio Markdown (status)
+        # Output 21 is company name (str)
 
     def test_generate_handler_with_missing_bullet_file(self):
         """Test that handle_generate handles missing bullet file."""
@@ -77,8 +78,8 @@ class TestGradioWorkflow:
             False
         )
 
-        # Should return 21 outputs with error (includes metadata states, canonical bullets, role, radio choices, status)
-        assert len(result) == 21
+        # Should return 22 outputs with error (includes metadata states, canonical bullets, role, radio choices, status, company_name)
+        assert len(result) == 22
         assert "error" in result[0]
 
     def test_preview_update_handler(self):
@@ -120,12 +121,13 @@ class TestGradioWorkflow:
         # Create simple HTML
         html = "<html><body><h1>Test Resume</h1></body></html>"
 
-        pdf_path, status = handle_pdf_generation(html)
+        pdf_path, status, pdf_state = handle_pdf_generation(html)
 
-        # Should return path and success message
+        # Should return path, success message, and path state
         assert pdf_path is not None
         assert isinstance(pdf_path, str)
         assert "PDF generated successfully" in status
+        assert pdf_state == pdf_path
 
         # File should exist
         path = Path(pdf_path)
@@ -153,7 +155,7 @@ class TestGradioWorkflow:
             canonical_bullets
         )
 
-        pdf_path, status = handle_pdf_generation(html)
+        pdf_path, status, pdf_state = handle_pdf_generation(html)
 
         # Should succeed
         assert pdf_path is not None
@@ -207,7 +209,7 @@ class TestGradioWorkflow:
         assert "[EDITED]" in preview_html
 
         # Step 4: Generate PDF
-        pdf_path, status = handle_pdf_generation(preview_html)
+        pdf_path, status, pdf_state = handle_pdf_generation(preview_html)
 
         # Verify PDF generation
         assert pdf_path is not None
