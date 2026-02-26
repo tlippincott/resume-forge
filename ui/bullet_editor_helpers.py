@@ -16,7 +16,8 @@ from app.validators import (
 from app.bullet_library_manager import (
     load_bullet_library,
     save_bullet_library,
-    create_new_bullet_library
+    create_new_bullet_library,
+    rows_to_section_summary,   # NEW
 )
 
 

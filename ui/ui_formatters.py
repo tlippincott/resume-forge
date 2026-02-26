@@ -307,10 +307,9 @@ def enrich_section_lists_with_ids(
 def create_bullet_library_response(
     success: bool,
     role: str = "",
-    bullets_text: str = "",
+    rows: list = None,
     status: str = "",
     file_path: str = "",
-    bullet_count: int = 0,
     validation: str = "Ready"
 ) -> tuple:
     """
@@ -321,43 +320,38 @@ def create_bullet_library_response(
     Args:
         success: True if library loaded successfully, False for error
         role: Role name (e.g., "Software Engineer")
-        bullets_text: Newline-separated bullet text
+        rows: List of [text, section] rows for Dataframe
         status: Status message to display
         file_path: Path to loaded file (empty for errors)
-        bullet_count: Number of bullets loaded
         validation: Validation summary string
 
     Returns:
         9-element tuple matching handle_load_bullet_library() outputs
-
-    Example:
-        >>> create_bullet_library_response(False, status="File not found")
-        (gr.update(), gr.update(), gr.update(visible=False), "File not found", "", "", "", "0 bullets", "Ready")
-
-        >>> create_bullet_library_response(True, role="Engineer", bullets_text="...", status="Loaded", file_path="...", bullet_count=25, validation="Valid")
-        (gr.update(value="Engineer"), gr.update(value="..."), gr.update(visible=True), "Loaded", "...", "Engineer", "...", "25 bullets", "Valid")
     """
+    from app.bullet_library_manager import rows_to_section_summary
+    safe_rows = rows if rows is not None else []
+
     if not success:
         return (
-            gr.update(),  # role_editor
-            gr.update(),  # bullets_editor
-            gr.update(visible=False),  # editor_group
-            status,  # editor_status
-            "",  # current_bullet_file_path
-            "",  # original_role
-            "",  # original_bullets_text
-            "0 bullets",  # bullet_count_display
-            "Ready"  # validation_display
+            gr.update(),              # role_editor
+            gr.update(),              # bullets_editor (Dataframe)
+            gr.update(visible=False), # editor_group
+            status,                   # editor_status
+            "",                       # current_bullet_file_path
+            "",                       # original_role
+            [],                       # original_bullets_text (now a list)
+            "0 bullets",              # bullet_count_display
+            "Ready"                   # validation_display
         )
 
     return (
-        gr.update(value=role),  # role_editor
-        gr.update(value=bullets_text),  # bullets_editor
-        gr.update(visible=True),  # editor_group
-        status,  # editor_status
-        file_path,  # current_bullet_file_path
-        role,  # original_role
-        bullets_text,  # original_bullets_text
-        f"{bullet_count} bullets",  # bullet_count_display
-        validation  # validation_display
+        gr.update(value=role),       # role_editor
+        gr.update(value=safe_rows),  # bullets_editor (Dataframe)
+        gr.update(visible=True),     # editor_group
+        status,                      # editor_status
+        file_path,                   # current_bullet_file_path
+        role,                        # original_role
+        safe_rows,                   # original_bullets_text (snapshot)
+        rows_to_section_summary(safe_rows),  # bullet_count_display
+        validation                   # validation_display
     )

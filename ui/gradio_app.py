@@ -30,8 +30,7 @@ from ui.bullet_editor_helpers import (
     load_bullet_library,
     save_bullet_library,
     create_new_bullet_library,
-    count_bullets,
-    get_validation_summary
+    rows_to_section_summary,
 )
 from ui.ui_formatters import (
     format_removed_bullet_display,
@@ -48,6 +47,26 @@ from ui.ui_formatters import (
 
 BULLET_DIR = "bullet_libs"
 excluded_list = ["bullet_example.json"]
+
+# Section column header derived from VALID_SECTIONS — updates automatically if sections are added
+from app.bullet_library_manager import VALID_SECTIONS as _VALID_SECTIONS
+_SECTION_HEADER = "Section (" + "/".join(sorted(_VALID_SECTIONS)) + ")"
+
+
+def _validate_rows_summary(rows: list) -> str:
+    """Return validation display string for Dataframe rows (UI helper)."""
+    safe = rows or []
+    if not safe:
+        return "Ready"
+    errors = sum(
+        1 for r in safe
+        if not (isinstance(r, (list, tuple)) and len(r) >= 2
+                and str(r[0]).strip()
+                and str(r[1]).strip().lower() in _VALID_SECTIONS)
+    )
+    if errors == 0:
+        return f"All {len(safe)} bullets valid"
+    return f"{errors} row(s) have invalid/missing section — valid: {', '.join(sorted(_VALID_SECTIONS))}"
 
 def list_bullet_files():
     bullet_path = Path(BULLET_DIR)
@@ -307,24 +326,12 @@ def handle_load_bullet_library(file_path):
     """Load bullet library from file."""
     if not file_path:
         return create_bullet_library_response(False, status="Please select a file")
-
-    role, bullets_text, status = load_bullet_library(file_path)
-
-    if not role:  # Error occurred
+    role, rows, status = load_bullet_library(file_path)
+    if not role:
         return create_bullet_library_response(False, status=status)
-
-    # Success - get metadata and create response
-    bullet_count = count_bullets(bullets_text)
-    validation = get_validation_summary(bullets_text)
-
     return create_bullet_library_response(
-        True,
-        role=role,
-        bullets_text=bullets_text,
-        status=status,
-        file_path=file_path,
-        bullet_count=bullet_count,
-        validation=validation
+        True, role=role, rows=rows, status=status, file_path=file_path,
+        validation=_validate_rows_summary(rows)
     )
 
 
@@ -338,7 +345,7 @@ def handle_create_new_library(role_name):
             "Please enter a role name",  # editor_status
             "",  # current_bullet_file_path
             "",  # original_role
-            "",  # original_bullets_text
+            [],  # original_bullets_text
             "0 bullets",  # bullet_count_display
             "Ready",  # validation_display
             gr.update()  # new_role_name (don't clear on error)
@@ -354,7 +361,7 @@ def handle_create_new_library(role_name):
             status,  # editor_status
             "",  # current_bullet_file_path
             "",  # original_role
-            "",  # original_bullets_text
+            [],  # original_bullets_text
             "0 bullets",  # bullet_count_display
             "Ready",  # validation_display
             gr.update()  # new_role_name (don't clear on error)
@@ -363,111 +370,59 @@ def handle_create_new_library(role_name):
     # Success - show editor with empty bullets
     return (
         gr.update(value=role_name.strip()),  # role_editor
-        gr.update(value=""),  # bullets_editor (empty)
+        gr.update(value=[]),  # bullets_editor (empty)
         gr.update(visible=True),  # editor_group
         status,  # editor_status
         file_path,  # current_bullet_file_path
         role_name.strip(),  # original_role
-        "",  # original_bullets_text (empty)
+        [],  # original_bullets_text (empty)
         "0 bullets",  # bullet_count_display
-        "✓ All bullets valid",  # validation_display
+        "Ready",  # validation_display
         gr.update(value="")  # new_role_name (clear on success)
     )
 
 
-def handle_save_bullet_library(file_path, role, bullets_text):
+def handle_save_bullet_library(file_path, role, bullets_editor_value):
     """Save bullet library to file."""
     if not file_path:
-        return (
-            "Error: No file loaded",  # editor_status
-            gr.update(),  # original_role
-            gr.update(),  # original_bullets_text
-            gr.update()  # bullet_lib_dropdown
-        )
-
-    success, status = save_bullet_library(file_path, role, bullets_text)
-
+        return ("Error: No file loaded", gr.update(), gr.update(), gr.update())
+    success, status = save_bullet_library(file_path, role, bullets_editor_value)
     if success:
-        # Update original states (new baseline)
-        return (
-            status,  # editor_status
-            role,  # original_role (new baseline)
-            bullets_text,  # original_bullets_text (new baseline)
-            gr.update(choices=list_bullet_files())  # refresh dropdown
-        )
-    else:
-        return (
-            status,  # editor_status
-            gr.update(),  # original_role (no change)
-            gr.update(),  # original_bullets_text (no change)
-            gr.update()  # bullet_lib_dropdown (no change)
-        )
+        return (status, role, bullets_editor_value, gr.update(choices=list_bullet_files()))
+    return (status, gr.update(), gr.update(), gr.update())
 
 
 def handle_discard_changes(original_role, original_bullets_text):
     """Discard changes and restore original values."""
-    bullet_count = count_bullets(original_bullets_text)
-    validation = get_validation_summary(original_bullets_text)
-
+    safe = original_bullets_text if original_bullets_text else []
     return (
-        gr.update(value=original_role),  # role_editor
-        gr.update(value=original_bullets_text),  # bullets_editor
-        f"{bullet_count} bullets",  # bullet_count_display
-        validation,  # validation_display
-        "Changes discarded"  # editor_status
+        gr.update(value=original_role),
+        gr.update(value=safe),
+        rows_to_section_summary(safe),
+        _validate_rows_summary(safe),
+        "Changes discarded"
     )
 
 
 def handle_refresh_from_file(file_path):
     """Reload bullet library from file, discarding unsaved changes."""
     if not file_path:
-        return (
-            gr.update(),  # role_editor
-            gr.update(),  # bullets_editor
-            "0 bullets",  # bullet_count_display
-            "Ready",  # validation_display
-            "Error: No file loaded",  # editor_status
-            "",  # original_role
-            ""  # original_bullets_text
-        )
-
-    role, bullets_text, status = load_bullet_library(file_path)
-
-    if not role:  # Error occurred
-        return (
-            gr.update(),  # role_editor
-            gr.update(),  # bullets_editor
-            "0 bullets",  # bullet_count_display
-            "Ready",  # validation_display
-            status,  # editor_status
-            "",  # original_role
-            ""  # original_bullets_text
-        )
-
-    # Success
-    bullet_count = count_bullets(bullets_text)
-    validation = get_validation_summary(bullets_text)
-
+        return (gr.update(), gr.update(), "0 bullets", "Ready",
+                "Error: No file loaded", "", [])
+    role, rows, status = load_bullet_library(file_path)
+    if not role:
+        return (gr.update(), gr.update(), "0 bullets", "Ready", status, "", [])
     return (
-        gr.update(value=role),  # role_editor
-        gr.update(value=bullets_text),  # bullets_editor
-        f"{bullet_count} bullets",  # bullet_count_display
-        validation,  # validation_display
-        status,  # editor_status
-        role,  # original_role (update baseline)
-        bullets_text  # original_bullets_text (update baseline)
+        gr.update(value=role), gr.update(value=rows),
+        rows_to_section_summary(rows), _validate_rows_summary(rows),
+        status, role, rows
     )
 
 
-def handle_bullets_change(bullets_text):
-    """Update displays when bullets text changes."""
-    bullet_count = count_bullets(bullets_text)
-    validation = get_validation_summary(bullets_text)
-
-    return (
-        f"{bullet_count} bullets",  # bullet_count_display
-        validation  # validation_display
-    )
+def handle_bullets_change(bullets_editor_value):
+    """Update displays when bullets dataframe changes."""
+    safe = bullets_editor_value or []
+    return rows_to_section_summary(safe), _validate_rows_summary(safe)
 
 
 # ===== INTELLIGENT REPLACEMENT EVENT HANDLERS =====
@@ -1005,16 +960,20 @@ def launch_app():
             with gr.Group(visible=False) as editor_group:
                 role_editor = gr.Textbox(label="Role Name", lines=1)
 
-                bullets_editor = gr.Textbox(
-                    label="Bullets (one per line)",
-                    lines=25,
-                    max_lines=100,
-                    info="Enter one bullet per line. No periods at end."
+                bullets_editor = gr.Dataframe(
+                    label="Bullets",
+                    headers=["Bullet Text", _SECTION_HEADER],
+                    datatype=["str", "str"],
+                    type="array",
+                    col_count=(2, "fixed"),
+                    interactive=True,
+                    wrap=True,
+                    value=[],
                 )
 
                 with gr.Row():
                     bullet_count_display = gr.Label(label="\nBullet Count", value="0 bullets")
-                    validation_display = gr.Label(label="Text Validation", value="Ready")
+                    validation_display = gr.Label(label="Section Validation", value="Ready")
 
                 with gr.Row():
                     save_btn = gr.Button("Save Changes", variant="primary")
@@ -1026,7 +985,7 @@ def launch_app():
             # Hidden state variables
             current_bullet_file_path = gr.State(value="")
             original_role = gr.State(value="")
-            original_bullets_text = gr.State(value="")
+            original_bullets_text = gr.State(value=[])
 
         # Tab 4: Preview & Export (Resume)
         with gr.Tab("Preview & Export") as preview_tab:

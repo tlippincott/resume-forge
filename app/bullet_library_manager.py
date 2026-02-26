@@ -19,6 +19,24 @@ logger = get_logger(__name__)
 VALID_SECTIONS = {"spins", "programmer", "analyst"}
 
 
+def rows_to_section_summary(rows: list) -> str:
+    """Return '34 bullets (10 analyst, 12 programmer, 12 spins)' from [text, section] rows."""
+    counts: dict = {}
+    for row in (rows or []):
+        if isinstance(row, (list, tuple)) and len(row) >= 2:
+            section = str(row[1]).strip().lower()
+            if section:
+                counts[section] = counts.get(section, 0) + 1
+
+    total = sum(counts.values())
+    if total == 0:
+        return "0 bullets"
+
+    ordered = [f"{counts[s]} {s}" for s in sorted(VALID_SECTIONS) if s in counts]
+    ordered += [f"{counts[s]} {s}" for s in sorted(counts) if s not in VALID_SECTIONS]
+    return f"{total} bullets ({', '.join(ordered)})"
+
+
 def validate_bullet_item(item: Any, index: int) -> List[str]:
     """
     Validate a single bullet item from a bullet library.
@@ -87,7 +105,7 @@ def validate_bullet_library(bullet_data: dict) -> Tuple[bool, List[str]]:
     return len(all_errors) == 0, all_errors
 
 
-def load_bullet_library(file_path: str) -> Tuple[str, str, str]:
+def load_bullet_library(file_path: str) -> Tuple[str, list, str]:
     """
     Load bullet library from JSON file.
 
@@ -95,90 +113,90 @@ def load_bullet_library(file_path: str) -> Tuple[str, str, str]:
         file_path: Absolute path to JSON file
 
     Returns:
-        Tuple of (role, bullets_text, status_message)
+        Tuple of (role, rows, status_message) where rows = [[text, section], ...]
     """
     try:
         path = Path(file_path)
         if not path.exists():
-            logger.error(f"Bullet library file not found: {file_path}")
-            return "", "", f"Error: File not found: {file_path}"
+            return "", [], f"Error: File not found: {file_path}"
 
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        # Extract role and bullets
         role = data.get("role", "")
         bullets = data.get("bullets", [])
+        rows = []
+        for b in bullets:
+            if isinstance(b, dict):
+                rows.append([b.get("text", ""), b.get("section", "")])
+            else:
+                rows.append([str(b), ""])   # legacy plain string — section blank
 
-        # Support new {text, section} format — extract text for display
-        bullet_texts = [b["text"] if isinstance(b, dict) else b for b in bullets]
-
-        # Convert to text
-        bullets_text = bullets_to_text(bullet_texts)
-
-        bullet_count = len(text_to_bullets(bullets_text))
-        logger.info(f"Loaded {bullet_count} bullets from {path.name}")
-        return role, bullets_text, f"Loaded {bullet_count} bullets from {path.name}"
+        logger.info(f"Loaded {len(rows)} bullets from {path.name}")
+        return role, rows, f"Loaded {len(rows)} bullets from {path.name}"
 
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in {file_path}: {e}")
-        return "", "", f"Error: Invalid JSON in file: {str(e)}"
+        return "", [], f"Error: Invalid JSON in file: {str(e)}"
     except Exception as e:
-        logger.error(f"Error loading bullet library {file_path}: {e}")
-        return "", "", f"Error loading file: {str(e)}"
+        return "", [], f"Error loading file: {str(e)}"
 
 
-def save_bullet_library(file_path: str, role: str, bullets_text: str) -> Tuple[bool, str]:
+def save_bullet_library(file_path: str, role: str, rows: list) -> Tuple[bool, str]:
     """
     Save bullet library to JSON file.
 
     Args:
         file_path: Absolute path to JSON file
         role: Role name
-        bullets_text: Newline-separated bullet text
+        rows: List of [text, section] rows from Dataframe
 
     Returns:
         Tuple of (success, status_message)
     """
-    # Validate role
     role_valid, role_error = validate_role_name(role)
     if not role_valid:
-        logger.warning(f"Invalid role name: {role_error}")
         return False, f"Error: {role_error}"
 
-    # Validate bullets
-    bullets_valid, bullet_errors = validate_bullets_text(bullets_text)
-    if not bullets_valid:
-        error_list = "\n".join(bullet_errors[:5])  # Show first 5 errors
-        if len(bullet_errors) > 5:
-            error_list += f"\n... and {len(bullet_errors) - 5} more errors"
-        logger.warning(f"Bullet validation failed: {len(bullet_errors)} errors")
-        return False, f"Validation failed:\n{error_list}"
-
-    # Convert text to bullets array
-    bullets = text_to_bullets(bullets_text)
-
-    if len(bullets) == 0:
-        logger.warning("Attempted to save empty bullet library")
+    # Filter blank rows (user left empty rows at bottom of table)
+    non_empty = [r for r in (rows or []) if len(r) >= 2 and str(r[0]).strip()]
+    if not non_empty:
         return False, "Error: Cannot save empty bullet library"
 
-    # Build JSON data
-    data = {
-        "role": role.strip(),
-        "bullets": bullets
-    }
+    bullets = []
+    validation_errors = []
+    for i, row in enumerate(non_empty):
+        text = str(row[0]).strip()
+        section = str(row[1]).strip().lower() if len(row) > 1 else ""
+        item = {"text": text, "section": section}
+        errs = validate_bullet_item(item, i)
+        if errs:
+            validation_errors.extend(errs)
+        else:
+            bullets.append(item)
 
-    # Save to file
+    if validation_errors:
+        shown = validation_errors[:10]
+        if len(validation_errors) > 10:
+            shown.append(f"... and {len(validation_errors) - 10} more errors")
+        valid_str = ", ".join(sorted(VALID_SECTIONS))
+        return False, (
+            f"Validation failed ({len(validation_errors)} error(s)):\n"
+            + "\n".join(shown)
+            + f"\n\nValid sections: {valid_str}"
+        )
+
+    if not bullets:
+        return False, "Error: No valid bullets to save after validation"
+
+    data = {"role": role.strip(), "bullets": bullets}
     try:
         path = Path(file_path)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-
+        summary = rows_to_section_summary([[b["text"], b["section"]] for b in bullets])
         logger.info(f"Saved {len(bullets)} bullets to {path.name}")
-        return True, f"✓ Saved {len(bullets)} bullets to {path.name}"
-
+        return True, f"Saved {len(bullets)} bullets to {path.name} — {summary}"
     except Exception as e:
-        logger.error(f"Error saving bullet library to {file_path}: {e}")
         return False, f"Error saving file: {str(e)}"
 
 
