@@ -12,11 +12,14 @@ def cover_letter_prompt(summary, bullets, job_title, job_description, company_na
    # Format company_interest for better readability
    company_interest_text = "Not provided"
    if company_interest:
-      company_interest_text = "\n".join([
-         f"  - Hook: {company_interest.get('hook', '')}",
-         f"  - Alignment: {company_interest.get('alignment', '')}",
-         f"  - Credibility Anchor: {company_interest.get('credibility_anchor', '')}"
-      ])
+      lines = []
+      if company_interest.get('hook'):
+         lines.append(f"  - Hook: {company_interest['hook']}")
+      if company_interest.get('alignment'):
+         lines.append(f"  - Alignment: {company_interest['alignment']}")
+      if company_interest.get('credibility_anchor'):
+         lines.append(f"  - Credibility Anchor: {company_interest['credibility_anchor']}")
+      company_interest_text = "\n".join(lines) if lines else "Not provided"
 
    # Format JD analysis if provided (Phase 1A: reuse pre-analyzed JD intelligence)
    jd_intelligence_text = ""
@@ -168,7 +171,7 @@ Paragraph 1 (IMMEDIATE ALIGNMENT AND INTENT): 3-4 sentences, 60-80 words
 
 [CONDITIONAL] Paragraph 2 (MOTIVATION/COMPANY INTEREST): 2-3 sentences, 50-70 words
 - ONLY GENERATE IF company_interest is provided with at least one non-empty field
-- Synthesize the hook, alignment, and credibility anchor into a specific, grounded statement
+- Synthesize only the provided fields (hook, alignment, credibility anchor) into a specific, grounded statement; omit any field not present
 - Show "I chose you on purpose" without being gushy or generic
 - Reference concrete aspects: product features, tech stack, market position, problems they solve
 - Avoid mission-statement plagiarism or enthusiasm-heavy language ("thrilled", "perfect fit")
@@ -245,11 +248,11 @@ CONDITIONAL PARAGRAPH LOGIC:
 MOTIVATION PARAGRAPH:
 - IF company_interest is provided with at least one non-empty field:
   * Generate Paragraph 2 (Motivation/Company Interest, 50-70 words)
-  * Synthesize hook, alignment, and credibility_anchor into specific, grounded statement
+  * Synthesize only the provided (non-empty) fields into a specific, grounded statement
   * Use "I chose you on purpose" tone, not "passionate about synergy"
   * Reference concrete aspects (product, tech, market, problem they solve)
   * Avoid gushy language and mission-statement plagiarism
-- IF company_interest is NOT provided or all three fields are empty:
+- IF company_interest is NOT provided or all fields are empty:
   * Skip Paragraph 2 entirely
 
 GAP EXPLANATION PARAGRAPH:

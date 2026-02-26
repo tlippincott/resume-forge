@@ -6,7 +6,7 @@ No Gradio imports.
 """
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 _DB_DIR = Path(__file__).parent.parent / "applications"
@@ -101,7 +101,7 @@ def _compute_status(row: dict) -> str:
     if row.get("rejection_date"):
         return "Rejected"
     try:
-        applied = date.fromisoformat(row["applied_date"])
+        applied = datetime.strptime(row["applied_date"], "%m-%d-%Y").date()
         days = (date.today() - applied).days
     except (ValueError, TypeError):
         return "Pending"
@@ -118,7 +118,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     d["status"] = _compute_status(d)
     try:
-        applied = date.fromisoformat(d["applied_date"])
+        applied = datetime.strptime(d["applied_date"], "%m-%d-%Y").date()
         d["days_pending"] = (date.today() - applied).days
     except (ValueError, TypeError):
         d["days_pending"] = 0

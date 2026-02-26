@@ -38,8 +38,9 @@ def archive_pdfs(
     dest_dir = _ARCHIVE_DIR / f"{app_id}_{safe_company}_{safe_title}"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    resume_dest = _copy_if_exists(resume_src, dest_dir / "resume.pdf")
-    cover_dest = _copy_if_exists(cover_letter_src, dest_dir / "cover_letter.pdf")
+    label = f"{app_id}_{safe_company}_{safe_title}"
+    resume_dest = _copy_if_exists(resume_src, dest_dir / f"{label}_resume.pdf")
+    cover_dest = _copy_if_exists(cover_letter_src, dest_dir / f"{label}_cover_letter.pdf")
 
     return resume_dest, cover_dest
 

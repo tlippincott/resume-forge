@@ -662,7 +662,7 @@ def _applications_to_dataframe_rows(apps: list[dict]) -> list[list]:
 
 def handle_tracker_tab_select(company_name, job_title, job_description, resume_pdf_path, cover_letter_pdf_path):
     """Pre-fill the save form and load the applications dataframe."""
-    today = date.today().isoformat()
+    today = date.today().strftime("%m-%d-%Y")
     apps = list_applications()
     rows = _applications_to_dataframe_rows(apps)
     return (
@@ -1123,7 +1123,7 @@ def launch_app():
         # Tab 7: Job Tracker
         with gr.Tab("Job Tracker") as tracker_tab:
             with gr.Accordion("Save Current Application", open=True):
-                tracker_applied_date = gr.Textbox(label="Applied Date (YYYY-MM-DD)", value="")
+                tracker_applied_date = gr.Textbox(label="Applied Date (MM-DD-YYYY)", value="")
                 tracker_company = gr.Textbox(label="Company")
                 tracker_job_title_input = gr.Textbox(label="Job Title")
                 tracker_job_description = gr.Textbox(label="Job Description", lines=4)
@@ -1145,10 +1145,10 @@ def launch_app():
             with gr.Row():
                 update_app_id = gr.Number(label="Application ID", precision=0)
                 with gr.Column():
-                    rejection_date_input = gr.Textbox(label="Rejection Date (YYYY-MM-DD)")
+                    rejection_date_input = gr.Textbox(label="Rejection Date (MM-DD-YYYY)")
                     mark_rejected_btn = gr.Button("Mark Rejected")
                 with gr.Column():
-                    interview_date_input = gr.Textbox(label="Interview Date (YYYY-MM-DD)")
+                    interview_date_input = gr.Textbox(label="Interview Date (MM-DD-YYYY)")
                     mark_interview_btn = gr.Button("Mark Interview Scheduled")
             update_status = gr.Markdown(value="")
 

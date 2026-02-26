@@ -84,6 +84,8 @@ a {
 }
 
 .skills {
+    color: #004080;
+    font-size: 12px;
     margin-top: 0px;
     margin-bottom: 0px;
 }
@@ -110,6 +112,13 @@ a {
 
 .job-header h2 {
     margin: 0;
+}
+
+.university-name {
+    color: #004080;
+    font-size: 12px;
+    margin-top: 0px;
+    margin-bottom: 0px;
 }
 
 /* Page Margins */
