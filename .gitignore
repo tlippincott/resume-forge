@@ -25,6 +25,10 @@ gap_libs
 # Generated PDF files
 output/
 
+# Job application data (personal — never commit)
+applications/*
+!applications/.gitkeep
+
 # Pytest
 .coverage
 .pytest_cache/
