@@ -34,8 +34,8 @@ class TestGradioWorkflow:
             sample_inputs["job_change"]
         )
 
-        # Should return 22 outputs (includes metadata states, canonical bullets, role, radio choices, status, company_name)
-        assert len(result) == 22
+        # Should return 23 outputs (includes metadata states, canonical bullets, role, radio choices, status, company_name, edit_tools)
+        assert len(result) == 23
 
         # First output should be dict (JSON)
         assert isinstance(result[0], dict)
@@ -66,6 +66,8 @@ class TestGradioWorkflow:
         # Outputs 17-19 are Gradio Radio components (bullet selection dropdowns)
         # Output 20 is a Gradio Markdown (status)
         # Output 21 is company name (str)
+        # Output 22 is tools text (str)
+        assert isinstance(result[22], str)
 
     def test_generate_handler_with_missing_bullet_file(self):
         """Test that handle_generate handles missing bullet file."""
@@ -78,8 +80,8 @@ class TestGradioWorkflow:
             False
         )
 
-        # Should return 22 outputs with error (includes metadata states, canonical bullets, role, radio choices, status, company_name)
-        assert len(result) == 22
+        # Should return 23 outputs with error (includes metadata states, canonical bullets, role, radio choices, status, company_name, edit_tools)
+        assert len(result) == 23
         assert "error" in result[0]
 
     def test_preview_update_handler(self):

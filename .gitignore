@@ -35,3 +35,4 @@ applications/*
 
 # Log files
 logs/
+.DS_Store

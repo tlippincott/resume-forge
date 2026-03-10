@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 _TECHNICAL_SKILLS_CONFIG = Path(__file__).parent.parent / "config" / "technical_skills.json"
 
 
-def build_technical_skills_html(role: str = "General") -> str:
+def build_technical_skills_html(role: str = "General", tools_override: list[str] | None = None) -> str:
     """
     Build the TECHNICAL SKILLS HTML block for the resume template.
 
@@ -25,6 +25,7 @@ def build_technical_skills_html(role: str = "General") -> str:
 
     Args:
         role: Role type (e.g. "Programmer", "Analyst", "Help Desk")
+        tools_override: If provided, replaces the tools_and_environments bullets
 
     Returns:
         HTML string with all tech-skills-group divs in role-appropriate order
@@ -46,7 +47,10 @@ def build_technical_skills_html(role: str = "General") -> str:
         if not section:
             continue
         heading = html.escape(section.get("heading", key))
-        bullets = section.get("bullets", [])
+        if key == "tools_and_environments" and tools_override is not None:
+            bullets = tools_override
+        else:
+            bullets = section.get("bullets", [])
         li_items = "\n        ".join(
             f"<li>{html.escape(b)}</li>" for b in bullets
         )
@@ -67,7 +71,8 @@ def load_resume_html(
     spins_html: str,
     programmer_html: str,
     analyst_html: str,
-    role: str = "General"
+    role: str = "General",
+    tools_override: list[str] | None = None
 ) -> str:
     """
     Load resume template and substitute placeholders.
@@ -78,6 +83,7 @@ def load_resume_html(
         programmer_html: HTML for programmer section
         analyst_html: HTML for analyst section
         role: Role type for technical skills ordering (default "General")
+        tools_override: If provided, replaces the tools_and_environments bullets
 
     Returns:
         Complete HTML document with substitutions
@@ -120,7 +126,7 @@ def load_resume_html(
     html_content = html_content.replace("{spins}", spins_html or "")
     html_content = html_content.replace("{programmer}", programmer_html or "")
     html_content = html_content.replace("{analyst}", analyst_html or "")
-    html_content = html_content.replace("{technical_skills}", build_technical_skills_html(role))
+    html_content = html_content.replace("{technical_skills}", build_technical_skills_html(role, tools_override))
 
     logger.debug("Resume HTML template loaded and substituted successfully")
     return html_content

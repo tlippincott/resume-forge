@@ -48,6 +48,20 @@ from ui.ui_formatters import (
 BULLET_DIR = "bullet_libs"
 excluded_list = ["bullet_example.json"]
 
+
+def _get_default_tools_text() -> str:
+    """Return default tools_and_environments bullets as newline-joined string."""
+    import json
+    from pathlib import Path
+    config_path = Path(__file__).parent.parent / "config" / "technical_skills.json"
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        bullets = config["sections"]["tools_and_environments"]["bullets"]
+        return "\n".join(bullets)
+    except Exception:
+        return "Git, GitHub\nJira, Confluence, Notion\nVisual Studio"
+
 # Section column header derived from VALID_SECTIONS — updates automatically if sections are added
 from app.bullet_library_manager import VALID_SECTIONS as _VALID_SECTIONS
 _SECTION_HEADER = "Section (" + "/".join(sorted(_VALID_SECTIONS)) + ")"
@@ -85,7 +99,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
 
     if not bullet_file:
         error_status = gr.Markdown(value="❌ Please select a bullet file", visible=True)
-        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status, ""
+        return {"error": "Please select a bullet file"}, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status, "", _get_default_tools_text()
 
     # Call adapter (no try/except needed - adapter handles all exceptions)
     progress(0.2, desc="Calling resume engine...")
@@ -95,7 +109,7 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
     if isinstance(result_obj, Failure):
         error_output = {"error": result_obj.error_message, "error_type": result_obj.error_type}
         error_status = gr.Markdown(value=f"❌ {result_obj.error_message}", visible=True)
-        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status, ""
+        return error_output, "", "", "", "", "", [], [], [], "", "", [], {}, set(), "", [], "General", gr.Radio(choices=[]), gr.Radio(choices=[]), gr.Radio(choices=[]), error_status, "", _get_default_tools_text()
 
     # Extract result from Success
     progress(0.5, desc="Processing results...")
@@ -159,10 +173,11 @@ def handle_generate(jd, job_title, company, info, bullet_file, job_change, progr
         gr.Radio(choices=analyst_radio_choices, value=analyst_radio_choices[0][1] if analyst_radio_choices else None),  # analyst_bullet_radio
         success_status,        # generate_status
         company,               # State: company_name
+        _get_default_tools_text(),  # edit_tools
     )
 
 
-def handle_preview_update(summary_text, state_canonical_bullets, role: str = "General"):
+def handle_preview_update(summary_text, state_canonical_bullets, role: str = "General", tools_text: str = ""):
     """
     Update preview from canonical state (Phase 3B: one-way conversion).
 
@@ -186,8 +201,12 @@ def handle_preview_update(summary_text, state_canonical_bullets, role: str = "Ge
     programmer_html = build_html_bullets(programmer_list)
     analyst_html = build_html_bullets(analyst_list)
 
+    # Convert tools text to list (filter empty lines)
+    tools_list = [l.strip() for l in tools_text.splitlines() if l.strip()]
+
     # Load template and substitute
-    html = load_resume_html(summary_text, spins_html, programmer_html, analyst_html, role=role)
+    html = load_resume_html(summary_text, spins_html, programmer_html, analyst_html, role=role,
+                            tools_override=tools_list or None)
 
     return html
 
@@ -725,11 +744,12 @@ def handle_reset():
         "",        # state_company_name
         None,      # state_resume_pdf_path
         None,      # state_cover_letter_pdf_path
-        # Tab 2 Edit components (17)
+        # Tab 2 Edit components (18)
         gr.update(value=""),    # edit_summary
         gr.update(value=""),    # edit_spins
         gr.update(value=""),    # edit_programmer
         gr.update(value=""),    # edit_analyst
+        gr.update(value=_get_default_tools_text()),  # edit_tools
         gr.update(choices=[], value=None),  # spins_bullet_radio
         gr.update(choices=[], value=None),  # programmer_bullet_radio
         gr.update(choices=[], value=None),  # analyst_bullet_radio
@@ -876,6 +896,13 @@ def launch_app():
                         )
                         open_replacement_analyst = gr.Button("Get Suggestions for Selected Bullet", size="sm", variant="primary")
                         analyst_suggestion_status = gr.Markdown(value="", visible=False)
+
+                    with gr.Accordion("Tools and Environments", open=True):
+                        edit_tools = gr.Textbox(
+                            label="Edit tools (one per line)",
+                            lines=5,
+                            interactive=True
+                        )
 
                 # Right column: Intelligent Suggestions Panel (NEW)
                 with gr.Column(scale=1) as suggestions_panel:
@@ -1138,6 +1165,7 @@ def launch_app():
                 analyst_bullet_radio,        # Radio: Analyst bullet selection
                 generate_status,             # Status: Generation status message
                 state_company_name,          # State: company name for Job Tracker
+                edit_tools,                  # Tab 2: tools and environments textbox
             ]
         )
 
@@ -1151,7 +1179,7 @@ def launch_app():
                 state_analyzed_bullets, state_jd_analysis, state_used_bullet_ids,
                 state_job_description, state_canonical_bullets, state_role,
                 state_company_name, state_resume_pdf_path, state_cover_letter_pdf_path,
-                edit_summary, edit_spins, edit_programmer, edit_analyst,
+                edit_summary, edit_spins, edit_programmer, edit_analyst, edit_tools,
                 spins_bullet_radio, programmer_bullet_radio, analyst_bullet_radio,
                 spins_suggestion_status, programmer_suggestion_status, analyst_suggestion_status,
                 removed_bullet_display, suggestions_radio, suggestion_explanation,
@@ -1211,7 +1239,7 @@ def launch_app():
         # Auto-update preview when tab is selected (Phase 3B: uses canonical state)
         preview_tab.select(
             fn=handle_preview_update,
-            inputs=[state_summary, state_canonical_bullets, state_role],
+            inputs=[state_summary, state_canonical_bullets, state_role, edit_tools],
             outputs=preview_html
         )
 
