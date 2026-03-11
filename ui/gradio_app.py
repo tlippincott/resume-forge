@@ -1,6 +1,7 @@
 import gradio as gr
 from datetime import date
 from pathlib import Path
+from gradio_pdf import PDF
 from ui.adapters import generate_resume_adapter, generate_cover_letter_adapter
 from app.error_result import Success, Failure
 from app.job_tracker import (
@@ -10,6 +11,7 @@ from app.job_tracker import (
     update_interview,
     update_pdf_paths,
     list_applications,
+    get_application,
 )
 from app.application_archive import archive_pdfs
 from ui.resume_helpers import (
@@ -715,6 +717,51 @@ def handle_mark_interview(app_id, interview_date):
         return f"❌ Error: {str(e)}", gr.update()
 
 
+def handle_select_application(df_data, evt: gr.SelectData):
+    """Extract app_id from clicked row; return it and a selection status string."""
+    if evt is None:
+        return None, "Select a row to view its archived PDFs"
+    row_idx = evt.index[0]
+    try:
+        import pandas as pd
+        if isinstance(df_data, pd.DataFrame):
+            app_id = int(df_data.iloc[row_idx, 0])
+        else:
+            app_id = int(df_data[row_idx][0])
+        app = get_application(app_id)
+        if app is None:
+            return None, "Application not found"
+        return app_id, f"Selected: #{app_id} — {app['company_name']} ({app['job_title']})"
+    except Exception as e:
+        return None, f"Error reading selection: {e}"
+
+
+def handle_view_resume(app_id):
+    """Return archived resume PDF path for the selected application."""
+    if app_id is None:
+        return None, "No application selected — click a row first"
+    app = get_application(app_id)
+    if app is None:
+        return None, "Application not found"
+    path = app.get("resume_pdf_path")
+    if not path:
+        return None, "No resume archived for this application"
+    return path, ""
+
+
+def handle_view_cover_letter(app_id):
+    """Return archived cover letter PDF path for the selected application."""
+    if app_id is None:
+        return None, "No application selected — click a row first"
+    app = get_application(app_id)
+    if app is None:
+        return None, "Application not found"
+    path = app.get("cover_letter_pdf_path")
+    if not path:
+        return None, "No cover letter archived for this application"
+    return path, ""
+
+
 def handle_reset():
     """Reset all session components and state variables to startup defaults."""
     return (
@@ -815,6 +862,7 @@ def launch_app():
         state_company_name = gr.State(value="")
         state_resume_pdf_path = gr.State(value=None)
         state_cover_letter_pdf_path = gr.State(value=None)
+        state_selected_app_id = gr.State(value=None)
 
         # Tab 1: Generate
         with gr.Tab("Generate"):
@@ -1126,6 +1174,16 @@ def launch_app():
                 label="Applications",
                 wrap=True,
             )
+
+            gr.Markdown("---\n### View Archived PDFs")
+            viewer_status = gr.Markdown(value="Click a row in the table above to select an application")
+            with gr.Row():
+                view_resume_btn = gr.Button("View Resume")
+                view_cover_btn = gr.Button("View Cover Letter")
+            with gr.Accordion("Resume PDF", open=False):
+                resume_pdf_viewer = PDF(label="Resume", height=700)
+            with gr.Accordion("Cover Letter PDF", open=False):
+                cover_pdf_viewer = PDF(label="Cover Letter", height=700)
 
             gr.Markdown("---\n### Update Application Status")
             with gr.Row():
@@ -1515,6 +1573,27 @@ def launch_app():
             fn=handle_mark_interview,
             inputs=[update_app_id, interview_date_input],
             outputs=[update_status, applications_df]
+        )
+
+        # Row selection → store app_id and update status
+        applications_df.select(
+            fn=handle_select_application,
+            inputs=[applications_df],
+            outputs=[state_selected_app_id, viewer_status]
+        )
+
+        # View Resume button
+        view_resume_btn.click(
+            fn=handle_view_resume,
+            inputs=[state_selected_app_id],
+            outputs=[resume_pdf_viewer, viewer_status]
+        )
+
+        # View Cover Letter button
+        view_cover_btn.click(
+            fn=handle_view_cover_letter,
+            inputs=[state_selected_app_id],
+            outputs=[cover_pdf_viewer, viewer_status]
         )
 
     init_db()
