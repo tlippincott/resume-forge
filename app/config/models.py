@@ -194,3 +194,15 @@ class OutputConfig(BaseModel):
         default="cover_letter",
         description="Cover letter PDF filename (without .pdf extension)"
     )
+    pdf_copy_dir: str = Field(
+        default="",
+        description="Directory to copy generated PDFs into (leave empty to disable)"
+    )
+    pdf_copy_resume_name: str = Field(
+        default="resume_copy.pdf",
+        description="Filename for the resume copy in pdf_copy_dir (include .pdf)"
+    )
+    pdf_copy_cover_letter_name: str = Field(
+        default="cover_letter_copy.pdf",
+        description="Filename for the cover letter copy in pdf_copy_dir (include .pdf)"
+    )

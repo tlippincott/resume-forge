@@ -108,6 +108,9 @@ class Config(BaseModel):
         output = OutputConfig(
             resume_pdf_name=os.getenv("OUTPUT_RESUME_PDF_NAME", "resume"),
             cover_letter_pdf_name=os.getenv("OUTPUT_COVER_LETTER_PDF_NAME", "cover_letter"),
+            pdf_copy_dir=os.getenv("OUTPUT_PDF_COPY_DIR", ""),
+            pdf_copy_resume_name=os.getenv("OUTPUT_PDF_COPY_RESUME_NAME", "resume_copy.pdf"),
+            pdf_copy_cover_letter_name=os.getenv("OUTPUT_PDF_COPY_COVER_LETTER_NAME", "cover_letter_copy.pdf"),
         )
 
         return cls(

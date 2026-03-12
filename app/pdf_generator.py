@@ -5,6 +5,7 @@ This module contains business logic for generating PDF files from HTML.
 Previously in ui/resume_helpers.py.
 """
 
+import shutil
 from pathlib import Path
 from app.render import render_html_to_pdf
 from app.exceptions import FileOperationError
@@ -12,7 +13,6 @@ from app.logging_config import get_logger
 from app.config import config
 
 logger = get_logger(__name__)
-
 
 def generate_pdf_file(html_content: str) -> str:
     """
@@ -44,6 +44,11 @@ def generate_pdf_file(html_content: str) -> str:
     try:
         render_html_to_pdf(html_content, str(filepath))
         logger.info(f"Resume PDF generated: {filepath}")
+        if config.output.pdf_copy_dir:
+            copy_dir = Path(config.output.pdf_copy_dir)
+            copy_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(filepath, copy_dir / config.output.pdf_copy_resume_name)
+            logger.info(f"Resume PDF copied to {copy_dir}")
     except Exception as e:
         logger.error(f"Error generating PDF: {e}")
         raise FileOperationError(f"Error generating PDF: {e}")
@@ -82,6 +87,11 @@ def generate_cover_letter_pdf_file(html_content: str) -> str:
     try:
         render_html_to_pdf(html_content, str(filepath))
         logger.info(f"Cover letter PDF generated: {filepath}")
+        if config.output.pdf_copy_dir:
+            copy_dir = Path(config.output.pdf_copy_dir)
+            copy_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(filepath, copy_dir / config.output.pdf_copy_cover_letter_name)
+            logger.info(f"Cover letter PDF copied to {copy_dir}")
     except Exception as e:
         logger.error(f"Error generating PDF: {e}")
         raise FileOperationError(f"Error generating PDF: {e}")
