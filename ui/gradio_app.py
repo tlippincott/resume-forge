@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 from gradio_pdf import PDF
 from ui.adapters import generate_resume_adapter, generate_cover_letter_adapter
+from app.config import config
 from app.error_result import Success, Failure
 from app.job_tracker import (
     init_db,
@@ -217,9 +218,13 @@ def handle_pdf_generation(html_content):
     """Generate PDF from current preview."""
     try:
         pdf_path = generate_pdf_file(html_content)
-        return pdf_path, f"PDF generated successfully: {Path(pdf_path).name}", pdf_path
+        if config.output.pdf_copy_dir:
+            save_path = str(Path(config.output.pdf_copy_dir) / config.output.pdf_copy_resume_name)
+        else:
+            save_path = pdf_path
+        return save_path, f"PDF saved to: {save_path}", pdf_path
     except Exception as e:
-        return None, f"Error generating PDF: {str(e)}", None
+        return "", f"Error generating PDF: {str(e)}", None
 
 
 def handle_generate_cover_letter(summary_text, spins_text, programmer_text, analyst_text,
@@ -324,7 +329,7 @@ def handle_update_cover_preview(edited_text):
 def handle_cover_letter_pdf_generation(cover_letter_html):
     """Generate PDF from cover letter HTML."""
     if not cover_letter_html:
-        return None, "Please generate a cover letter first", None
+        return "", "Please generate a cover letter first", None
 
     try:
         # Load full HTML template
@@ -332,9 +337,13 @@ def handle_cover_letter_pdf_generation(cover_letter_html):
 
         # Generate PDF
         pdf_path = generate_cover_letter_pdf_file(html)
-        return pdf_path, f"PDF generated successfully: {Path(pdf_path).name}", pdf_path
+        if config.output.pdf_copy_dir:
+            save_path = str(Path(config.output.pdf_copy_dir) / config.output.pdf_copy_cover_letter_name)
+        else:
+            save_path = pdf_path
+        return save_path, f"PDF saved to: {save_path}", pdf_path
     except Exception as e:
-        return None, f"Error generating PDF: {str(e)}", None
+        return "", f"Error generating PDF: {str(e)}", None
 
 
 def handle_gap_role_change(gap_file_path):
@@ -816,7 +825,7 @@ def handle_reset():
         {},  # replacement_removed_bullet
         # Tab 4 Preview (3)
         gr.update(value=""),    # preview_html
-        gr.update(value=None),  # pdf_file_output
+        gr.update(value=""),    # pdf_file_output
         gr.update(value=""),    # status_message
         # Tab 5 Cover Letter (8)
         gr.update(value=""),    # company_hook
@@ -830,7 +839,7 @@ def handle_reset():
         # Tab 6 Cover Letter Preview (4, was 3)
         gr.update(value=""),    # cover_letter_edit
         gr.update(value=""),    # cover_preview_html
-        gr.update(value=None),  # cover_pdf_file_output
+        gr.update(value=""),    # cover_pdf_file_output
         gr.update(value=""),    # cover_status_message
     )
 
@@ -1066,7 +1075,7 @@ def launch_app():
         with gr.Tab("Preview & Export") as preview_tab:
             preview_html = gr.HTML(label="Resume Preview")
             generate_pdf_btn = gr.Button("Generate PDF")
-            pdf_file_output = gr.File(label="Download PDF")
+            pdf_file_output = gr.Textbox(label="Saved To", interactive=False)
             status_message = gr.Textbox(label="Status", interactive=False)
 
         # Tab 5: Generate Cover Letter
@@ -1123,7 +1132,8 @@ def launch_app():
                 label="Select gap explanation role",
                 choices=[],
                 value=None,
-                interactive=True
+                interactive=True,
+                allow_custom_value=True
             )
 
             # Textbox (editable, loads from selected file)
@@ -1151,7 +1161,7 @@ def launch_app():
             update_cover_preview_btn = gr.Button("Update Preview", variant="secondary")
             cover_preview_html = gr.HTML(label="Cover Letter Preview")
             generate_cover_pdf_btn = gr.Button("Generate PDF")
-            cover_pdf_file_output = gr.File(label="Download Cover Letter PDF")
+            cover_pdf_file_output = gr.Textbox(label="Saved To", interactive=False)
             cover_status_message = gr.Textbox(label="Status", interactive=False)
 
         # Tab 7: Job Tracker
@@ -1297,7 +1307,7 @@ def launch_app():
         # Auto-update preview when tab is selected (Phase 3B: uses canonical state)
         preview_tab.select(
             fn=handle_preview_update,
-            inputs=[state_summary, state_canonical_bullets, state_role, edit_tools],
+            inputs=[edit_summary, state_canonical_bullets, state_role, edit_tools],
             outputs=preview_html
         )
 
