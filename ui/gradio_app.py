@@ -727,9 +727,9 @@ def handle_mark_interview(app_id, interview_date):
 
 
 def handle_select_application(df_data, evt: gr.SelectData):
-    """Extract app_id from clicked row; return it and a selection status string."""
+    """Extract app_id from clicked row; return it, company, title, and a selection status string."""
     if evt is None:
-        return None, "Select a row to view its archived PDFs"
+        return None, "", "", "Select a row to view its archived PDFs"
     row_idx = evt.index[0]
     try:
         import pandas as pd
@@ -739,10 +739,10 @@ def handle_select_application(df_data, evt: gr.SelectData):
             app_id = int(df_data[row_idx][0])
         app = get_application(app_id)
         if app is None:
-            return None, "Application not found"
-        return app_id, f"Selected: #{app_id} — {app['company_name']} ({app['job_title']})"
+            return None, "", "", "Application not found"
+        return app_id, app["company_name"], app["job_title"], f"Selected: #{app_id} — {app['company_name']} ({app['job_title']})"
     except Exception as e:
-        return None, f"Error reading selection: {e}"
+        return None, "", "", f"Error reading selection: {e}"
 
 
 def handle_view_resume(app_id):
@@ -1198,6 +1198,8 @@ def launch_app():
             gr.Markdown("---\n### Update Application Status")
             with gr.Row():
                 update_app_id = gr.Number(label="Application ID", precision=0)
+                update_company = gr.Textbox(label="Company", interactive=False)
+                update_job_title_display = gr.Textbox(label="Title", interactive=False)
                 with gr.Column():
                     rejection_date_input = gr.Textbox(label="Rejection Date (MM-DD-YYYY)")
                     mark_rejected_btn = gr.Button("Mark Rejected")
@@ -1589,7 +1591,7 @@ def launch_app():
         applications_df.select(
             fn=handle_select_application,
             inputs=[applications_df],
-            outputs=[state_selected_app_id, viewer_status]
+            outputs=[state_selected_app_id, update_company, update_job_title_display, viewer_status]
         )
 
         # View Resume button
