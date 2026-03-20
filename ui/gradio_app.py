@@ -696,6 +696,21 @@ def handle_refresh_applications():
     return _applications_to_dataframe_rows(apps)
 
 
+def handle_search_company(search_text: str):
+    apps = list_applications()
+    rows = _applications_to_dataframe_rows(apps)
+    if search_text and search_text.strip():
+        query = search_text.strip().lower()
+        rows = [row for row in rows if query in str(row[2]).lower()]
+    return rows
+
+
+def handle_clear_search():
+    apps = list_applications()
+    rows = _applications_to_dataframe_rows(apps)
+    return "", rows
+
+
 def handle_mark_rejected(app_id, rejection_date):
     """Mark an application as rejected and refresh the dataframe."""
     if not app_id:
@@ -1166,18 +1181,22 @@ def launch_app():
 
         # Tab 7: Job Tracker
         with gr.Tab("Job Tracker") as tracker_tab:
+            save_application_btn = gr.Button("Save Application", variant="primary")
+            save_status = gr.Markdown(value="")
+
             with gr.Accordion("Save Current Application", open=True):
                 tracker_applied_date = gr.Textbox(label="Applied Date (MM-DD-YYYY)", value="")
                 tracker_company = gr.Textbox(label="Company")
                 tracker_job_title_input = gr.Textbox(label="Job Title")
-                tracker_job_description = gr.Textbox(label="Job Description", lines=4)
+                tracker_job_description = gr.Textbox(label="Job Description", lines=2)
                 tracker_notes = gr.Textbox(label="Notes (optional)", lines=2)
                 tracker_resume_path_display = gr.Textbox(label="Resume PDF", interactive=False)
                 tracker_cover_letter_path_display = gr.Textbox(label="Cover Letter PDF", interactive=False)
-                save_application_btn = gr.Button("Save Application", variant="primary")
-                save_status = gr.Markdown(value="")
 
             refresh_applications_btn = gr.Button("Refresh Applications")
+            with gr.Row():
+                company_search = gr.Textbox(label="Search by Company", placeholder="Type to filter...", scale=4)
+                clear_search_btn = gr.Button("Clear Search", scale=1)
             applications_df = gr.Dataframe(
                 headers=["ID", "Date", "Company", "Title", "Status", "Days", "Notes"],
                 datatype=["number", "str", "str", "str", "str", "number", "str"],
@@ -1571,6 +1590,18 @@ def launch_app():
             fn=handle_refresh_applications,
             inputs=[],
             outputs=[applications_df]
+        )
+
+        company_search.change(
+            fn=handle_search_company,
+            inputs=[company_search],
+            outputs=[applications_df]
+        )
+
+        clear_search_btn.click(
+            fn=handle_clear_search,
+            inputs=[],
+            outputs=[company_search, applications_df]
         )
 
         # Mark rejected
