@@ -105,6 +105,34 @@ The structure will be 4 OR 5 paragraphs depending on whether company_interest is
    - Avoid hyperbole (thrilled, perfect fit, dream job, ideal candidate)
    - Avoid generic statements that could apply to any job
    - Prefer concrete connections over abstract enthusiasm
+   - CRITICAL: Every sentence must be anchorable to a specific bullet, JD requirement, or company_info detail. Sentences that make claims without an anchor in the input data are prohibited.
+
+=== BANNED SENTENCE PATTERNS ===
+
+The following structures are PROHIBITED. If you catch yourself writing any variation, delete and replace with a concrete claim grounded in the bullets.
+
+BRIDGE PHRASES — delete, replace with direct evidence:
+- "...which aligns well with the requirements of [role/company]"
+- "...positions me to [verb] [company] employees/team"
+- "...allows me to leverage my [X] experience while [Y]"
+- "...transition into this role" / "embrace new challenges"
+
+EMOTION-FIRST OPENERS — prohibited as sentence starters:
+- "I am eager/excited/enthusiastic/confident that..."
+- "I am thrilled about the opportunity..."
+- "I look forward to contributing..."
+
+GENERIC FUTURE ORIENTATION — delete entirely:
+- "opportunity to grow within a [collaborative/dynamic] team"
+- "make a meaningful impact within your team"
+- "contribute to your mission"
+- "ensuring your team has the tools necessary for success"
+
+INDUSTRY DESCRIPTOR CLICHÉS — never use:
+- "dynamic environment", "fast-paced environment", "collaborative environment"
+- "fast-growing company", "innovative team"
+
+GENERICNESS TEST: Before finalizing any sentence, ask — could this sentence appear unchanged in a cover letter for a different company in a different industry? If yes, delete and rewrite with a specific claim from the bullets or JD.
 
 === WHAT YOU MAY DO ===
 
@@ -196,6 +224,9 @@ Paragraph N+1 (DIFFERENTIATION AND CONTEXT): 3-4 sentences, 70-100 words
 - Reference unique aspects of your background that create value for this specific role
 - Use company_info (if provided) to show genuine research and alignment
 - Avoid generic statements that could apply to any candidate
+- Do NOT use "leverage", "transition into", "embrace new challenges", or "position myself to"
+- If job_change is True: name the SPECIFIC skills being transferred and the SPECIFIC gap being bridged — not a general statement about transferability
+- If job_change is False: reference a SPECIFIC depth or trajectory from the bullets — not "deepening expertise" as an abstract claim
 
 [CONDITIONAL] Paragraph N+2 (GAP EXPLANATION): 3-4 sentences, 60-90 words
 - ONLY GENERATE IF gap_explanation is provided and not empty
@@ -207,11 +238,13 @@ Paragraph N+1 (DIFFERENTIATION AND CONTEXT): 3-4 sentences, 70-100 words
 
 Paragraph FINAL (FORWARD MOTION AND PROFESSIONALISM): 1-2 sentences, 30-50 words
 - This is ALWAYS the last paragraph
-- Briefly reaffirm interest in the specific role and company
-- Professional, confident close without desperation or excessive enthusiasm
-- Do NOT include availability for interview - that's assumed
-- Do NOT use phrases like "I look forward to hearing from you"
-- Keep it short and direct
+- State ONE specific thing about this role or company (drawn from the JD or company_info) that makes this the right next step — grounded in content, not sentiment
+- If no specific reason exists in the inputs, simply state readiness and reference the specific role title
+- Do NOT open with "I am eager/excited/enthusiastic/confident" or any variation
+- Do NOT reference "contributing to your mission", "making an impact", or "growing with your team"
+- Do NOT include availability for interview — that's assumed
+- Do NOT use "I look forward to hearing from you"
+- One concrete sentence, one professional closer. No more.
 
 === INPUT ===
 
@@ -347,6 +380,8 @@ Before returning your response, verify:
    - 6 paragraphs: 350-540 words
 9. If Paragraph 2 (motivation) is included, it avoids gushy language and mission-statement plagiarism
 10. If gap explanation is included, it uses VERBATIM text from gap_explanation parameter
+11. Every sentence passes the genericness test: it cannot appear verbatim in a cover letter for a different company in a different industry. Rewrite any that fail.
+12. The closing paragraph contains no emotion-first opener and references at least one specific detail from the JD or company_info — not a generic statement about growth, impact, or mission.
 """
    }]
 
